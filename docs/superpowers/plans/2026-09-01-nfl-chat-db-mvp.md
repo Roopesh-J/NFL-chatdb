@@ -254,7 +254,9 @@ def tiny_db(tmp_path):
         INSERT INTO play_by_play VALUES
             (1, '2023_01_A_B', 2023, 1, 'TEN', 'D.Henry', 1, 12),
             (2, '2023_01_A_B', 2023, 1, 'TEN', 'D.Henry', 0, 4),
-            (3, '2023_02_A_C', 2023, 2, 'TEN', 'D.Henry', 1, 3);
+            (3, '2023_02_A_C', 2023, 2, 'TEN', 'D.Henry', 1, 3),
+            (4, '2023_03_A_D', 2023, 3, 'TEN', 'D.Henry', 0, 5),
+            (5, '2023_04_A_E', 2023, 4, 'TEN', 'D.Henry', 0, 8);
         """
     )
     conn.commit()
