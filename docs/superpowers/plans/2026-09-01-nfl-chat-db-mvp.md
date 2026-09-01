@@ -850,7 +850,7 @@ git commit -m "feat: result-sample formatting"
 - Create: `tests/test_stage1_sql.py`
 
 **Interfaces:**
-- Consumes: `nfl_chatdb.database.{QueryError, QueryResult, run_query}`, `nfl_chatdb.formatting.format_result_sample`, the `fake_schema_text` and `tiny_db` fixtures.
+- Consumes: `nfl_chatdb.database.{QueryError, QueryResult, run_query}`, the `fake_schema_text` and `tiny_db` fixtures.
 - Produces:
   - `nfl_chatdb.stage1_sql.STAGE1_MODEL: str` — `"claude-haiku-4-5"`.
   - `nfl_chatdb.stage1_sql.Stage1Result` — dataclass: `sql: str`, `result: QueryResult`, `attempts: int`, `degenerate: bool` (True when the final result executed cleanly but is empty).
