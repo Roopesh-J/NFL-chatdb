@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 
+import anthropic
+
 from nfl_chatdb.database import DEFAULT_DB_PATH, QueryError, connect
 from nfl_chatdb.formatting import format_result_sample
 from nfl_chatdb.pipeline import PipelineOutcome, answer_question
@@ -13,8 +15,10 @@ from nfl_chatdb.stage1_sql import Stage1Error
 
 
 def build_client():
-    import anthropic
+    from dotenv import load_dotenv
 
+    # Load ANTHROPIC_API_KEY from a local .env if present; a no-op otherwise.
+    load_dotenv()
     return anthropic.Anthropic()
 
 
@@ -70,9 +74,12 @@ def main(argv=None) -> int:
     except Stage1Error as err:
         print(f"Could not produce a working query: {err.last_error}")
         return 1
+    except anthropic.APIError as err:
+        print(f"Anthropic API call failed: {err}")
+        return 2
 
     if args.json:
-        print(json.dumps(_outcome_to_dict(outcome), indent=2))
+        print(json.dumps(_outcome_to_dict(outcome), indent=2, default=str))
     else:
         print(render_outcome(outcome))
     return 0

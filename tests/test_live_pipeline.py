@@ -4,7 +4,6 @@ Requires data/nfl.db (uv run python -m nfl_chatdb.ingest) and ANTHROPIC_API_KEY.
 """
 
 import os
-from pathlib import Path
 
 import pytest
 

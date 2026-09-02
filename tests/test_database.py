@@ -2,7 +2,13 @@ import sqlite3
 
 import pytest
 
-from nfl_chatdb.database import QueryError, QueryResult, connect, run_query
+from nfl_chatdb.database import (
+    MAX_RESULT_ROWS,
+    QueryError,
+    QueryResult,
+    connect,
+    run_query,
+)
 
 
 def test_run_query_returns_rows_and_count(tiny_db):
@@ -50,6 +56,39 @@ def test_run_query_wraps_sqlite_errors(tiny_db):
 def test_connect_missing_file_raises(tmp_path):
     with pytest.raises(QueryError):
         connect(tmp_path / "does_not_exist.db")
+
+
+def test_connect_rejects_directory(tmp_path):
+    # A directory used to pass `.exists()` and then throw a bare
+    # OperationalError; it must raise QueryError like a missing file.
+    with pytest.raises(QueryError):
+        connect(tmp_path)
+
+
+def test_run_query_truncates_large_result(tmp_path):
+    path = tmp_path / "big.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE big (n INTEGER);
+        WITH RECURSIVE seq(n) AS (
+            SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 10005
+        )
+        INSERT INTO big SELECT n FROM seq;
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    ro = connect(path)
+    result = run_query(ro, "SELECT * FROM big")
+    assert len(result.rows) == MAX_RESULT_ROWS
+    assert result.row_count == MAX_RESULT_ROWS
+    assert result.truncated is True
+
+    small = run_query(ro, "SELECT * FROM big WHERE n <= 5")
+    assert len(small.rows) == 5
+    assert small.truncated is False
 
 
 def test_connection_is_read_only(tiny_db):

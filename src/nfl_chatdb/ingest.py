@@ -35,19 +35,42 @@ def render_schema_snapshot(conn: sqlite3.Connection) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def add_player_display_name(seasonal_df, rosters_df):
+    """Left-merge a `player_display_name` column onto seasonal_stats.
+
+    `nfl.import_seasonal_data` returns only `player_id` (GSIS ids like
+    `00-0035700`). `nfl.import_seasonal_rosters` carries `player_id` +
+    `player_name` per season, so we merge on (season, player_id). Rows with
+    no roster match keep a NULL name.
+    """
+    names = (
+        rosters_df[["season", "player_id", "player_name"]]
+        .dropna(subset=["player_id"])
+        .drop_duplicates(subset=["season", "player_id"])
+        .rename(columns={"player_name": "player_display_name"})
+    )
+    return seasonal_df.merge(names, on=["season", "player_id"], how="left")
+
+
 def _load_datasets(seasons: list[int]):
     """Return {table_name: DataFrame} pulled from nfl_data_py."""
     import nfl_data_py as nfl
 
+    seasonal = nfl.import_seasonal_data(seasons)
+    rosters = nfl.import_seasonal_rosters(seasons)
+    seasonal = add_player_display_name(seasonal, rosters)
+
     return {
         "play_by_play": nfl.import_pbp_data(seasons, downcast=True, cache=False),
-        "seasonal_stats": nfl.import_seasonal_data(seasons),
+        "seasonal_stats": seasonal,
         "snap_counts": nfl.import_snap_counts(seasons),
     }
 
 
 def ingest(
-    db_path: Path = DEFAULT_DB_PATH, seasons: list[int] = SEASONS
+    db_path: Path = DEFAULT_DB_PATH,
+    seasons: list[int] = SEASONS,
+    snapshot_path: Path = SCHEMA_SNAPSHOT_PATH,
 ) -> dict[str, int]:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +82,7 @@ def ingest(
             for table in TABLES
         }
         conn.commit()
-        SCHEMA_SNAPSHOT_PATH.write_text(render_schema_snapshot(conn))
+        Path(snapshot_path).write_text(render_schema_snapshot(conn))
     finally:
         conn.close()
     return counts

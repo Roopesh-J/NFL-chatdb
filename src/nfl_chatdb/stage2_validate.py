@@ -68,4 +68,9 @@ def validate_semantics(
         ],
         output_format=Stage2Verdict,
     )
-    return response.parsed_output
+    verdict = response.parsed_output
+    if verdict is None:
+        return Stage2Verdict(
+            valid=False, issues=["Stage 2 returned no parseable verdict."]
+        )
+    return verdict

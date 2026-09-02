@@ -51,6 +51,11 @@ def test_extract_sql_bare():
     assert extract_sql("  SELECT 1  ") == "SELECT 1"
 
 
+def test_extract_sql_language_tagged_fences():
+    assert extract_sql("```sqlite\nSELECT 1\n```") == "SELECT 1"
+    assert extract_sql("```postgresql\nSELECT 1\n```") == "SELECT 1"
+
+
 def test_extract_sql_empty_raises():
     with pytest.raises(Stage1Error):
         extract_sql("   ")

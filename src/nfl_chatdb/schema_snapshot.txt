@@ -386,7 +386,7 @@ Table: play_by_play
   n_defense (REAL)
   ngs_air_yards (REAL)
   time_to_throw (REAL)
-  was_pressure (INTEGER)
+  was_pressure (TEXT)
   route (TEXT)
   defense_man_zone_type (TEXT)
   defense_coverage_type (TEXT)
@@ -456,6 +456,7 @@ Table: seasonal_stats
   w8dom (REAL)
   yptmpa (REAL)
   ppr_sh (REAL)
+  player_display_name (TEXT)
 
 Table: snap_counts
   game_id (TEXT)

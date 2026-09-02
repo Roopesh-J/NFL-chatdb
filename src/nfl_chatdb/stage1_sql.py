@@ -13,10 +13,11 @@ SYSTEM_PROMPT = (
     "You translate questions about NFL statistics into a single SQLite "
     "SELECT query. Use only the tables and columns in the provided schema. "
     "Return only the SQL, in a ```sql fenced block, with no explanation. "
-    "The query must be a single read-only SELECT (a leading WITH is allowed)."
+    "The query must be a single read-only SELECT (a leading WITH is allowed). "
+    "The database covers NFL seasons 2021 through 2025."
 )
 
-_FENCE_RE = re.compile(r"```(?:sql)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*(.*?)\s*```", re.DOTALL)
 
 
 @dataclass
@@ -77,7 +78,7 @@ def generate_sql(
     for attempt in range(1, max_attempts + 1):
         response = client.messages.create(
             model=STAGE1_MODEL,
-            max_tokens=1024,
+            max_tokens=2048,
             system=SYSTEM_PROMPT,
             messages=messages,
         )

@@ -58,3 +58,18 @@ def test_validate_semantics_returns_parsed_verdict(fake_schema_text):
     assert "rushing TDs" in sent
     assert "touchdown = 1" in sent
     assert "cnt" in sent
+
+
+def test_validate_semantics_handles_unparseable_verdict(fake_schema_text):
+    # messages.parse returns parsed_output=None on refusal / max_tokens.
+    client = FakeParseClient(None)
+    out = validate_semantics(
+        client,
+        question="q",
+        sql="SELECT 1",
+        schema_text=fake_schema_text,
+        result_sample="1 row(s).\nn\n1",
+    )
+    assert isinstance(out, Stage2Verdict)
+    assert out.valid is False
+    assert out.issues

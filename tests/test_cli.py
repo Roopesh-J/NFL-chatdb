@@ -1,9 +1,9 @@
 import json
 
-import pytest
+import anthropic
 
 from nfl_chatdb import cli
-from nfl_chatdb.database import QueryResult, connect
+from nfl_chatdb.database import QueryResult
 from nfl_chatdb.pipeline import PipelineOutcome
 from nfl_chatdb.stage1_sql import Stage1Error
 from nfl_chatdb.stage2_validate import Stage2Verdict
@@ -77,3 +77,15 @@ def test_main_missing_db_returns_2(monkeypatch, tmp_path, capsys):
     rc = cli.main(["q", "--db", str(tmp_path / "absent.db")])
     assert rc == 2
     assert "ingest" in capsys.readouterr().out.lower()
+
+
+def test_main_api_error_returns_2(monkeypatch, tiny_db, capsys):
+    monkeypatch.setattr(cli, "load_schema_text", lambda: "schema")
+
+    def _boom():
+        raise anthropic.APIError("bad key", request=None, body=None)
+
+    monkeypatch.setattr(cli, "build_client", _boom)
+    rc = cli.main(["q", "--db", str(tiny_db)])
+    assert rc == 2
+    assert "api" in capsys.readouterr().out.lower()

@@ -8,6 +8,7 @@ dependencies = [
     "anthropic>=1.0",
     "nfl-data-py>=0.3.2",
     "pydantic>=2.0",
+    "python-dotenv>=1.2.3",
 ]
 
 [project.scripts]
