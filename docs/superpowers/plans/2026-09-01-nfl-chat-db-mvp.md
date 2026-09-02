@@ -24,7 +24,12 @@
 - **Package name:** `nfl_chatdb`, importable as `import nfl_chatdb`. Source lives under `src/nfl_chatdb/`.
 - **API key:** read from `ANTHROPIC_API_KEY` in the environment (or an `ant auth login` profile). Never hardcode. `.env` is git-ignored; `.env.example` is committed.
 - **Anthropic SDK note:** `anthropic` 1.x is built on `httpx2`. Use `client.messages.create(...)` for Stage 1 and `client.messages.parse(..., output_format=Model)` for Stage 2. Do not use assistant-message prefills (rejected on both models).
-- **Commit after every task** (frequent commits). Each task's final step is a commit.
+- **Commit after every task** (frequent commits). Each task's final step is a commit. The `git commit -m "..."` lines shown in each task are the *subject only* — every commit message must also end with these two trailer lines (blank line before them):
+
+  ```
+  Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+  Claude-Session: https://claude.ai/code/session_01Meh8doDoJB9WWsFfPLeNN9
+  ```
 
 ---
 
@@ -1142,7 +1147,7 @@ def generate_sql(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `uv run pytest tests/test_stage1_sql.py -q`
-Expected: PASS (10 passed)
+Expected: PASS (9 passed)
 
 - [ ] **Step 5: Commit**
 
