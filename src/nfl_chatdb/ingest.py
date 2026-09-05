@@ -12,7 +12,7 @@ from pathlib import Path
 
 from nfl_chatdb.database import DEFAULT_DB_PATH
 
-SEASONS = [2021, 2022, 2023, 2024, 2025]
+SEASONS = [2021, 2022, 2023, 2024]
 TABLES = ("play_by_play", "seasonal_stats", "snap_counts")
 SCHEMA_SNAPSHOT_PATH = Path(__file__).parent / "schema_snapshot.txt"
 
@@ -95,7 +95,7 @@ def main(argv=None) -> int:
         type=int,
         nargs="+",
         default=SEASONS,
-        help="Seasons to ingest (default: last 5 completed).",
+        help="Seasons to ingest (default: last 4 completed).",
     )
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     args = parser.parse_args(argv)

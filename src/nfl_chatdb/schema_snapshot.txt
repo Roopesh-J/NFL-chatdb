@@ -21,7 +21,7 @@ Table: play_by_play
   sp (REAL)
   qtr (REAL)
   down (REAL)
-  goal_to_go (INTEGER)
+  goal_to_go (REAL)
   time (TEXT)
   yrdln (TEXT)
   ydstogo (REAL)

@@ -29,6 +29,9 @@ def schema_text():
 
 @pytest.fixture(scope="module")
 def client():
+    from dotenv import load_dotenv
+
+    load_dotenv()
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
     return build_client()

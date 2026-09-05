@@ -14,7 +14,7 @@ SYSTEM_PROMPT = (
     "SELECT query. Use only the tables and columns in the provided schema. "
     "Return only the SQL, in a ```sql fenced block, with no explanation. "
     "The query must be a single read-only SELECT (a leading WITH is allowed). "
-    "The database covers NFL seasons 2021 through 2025."
+    "The database covers NFL seasons 2021 through 2024."
 )
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*(.*?)\s*```", re.DOTALL)

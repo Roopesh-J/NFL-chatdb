@@ -12,8 +12,10 @@ from nfl_chatdb.ingest import (
 )
 
 
-def test_seasons_are_last_five_completed():
-    assert SEASONS == [2021, 2022, 2023, 2024, 2025]
+def test_seasons_are_last_four_completed():
+    # 2025 excluded: nflverse-data hasn't published its player_stats
+    # release asset for 2025 yet as of this ingest run.
+    assert SEASONS == [2021, 2022, 2023, 2024]
 
 
 def test_tables_constant():
