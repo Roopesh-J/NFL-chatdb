@@ -1,3 +1,5 @@
+import pydantic
+
 from nfl_chatdb.stage2_validate import (
     STAGE2_MODEL,
     Stage2Verdict,
@@ -65,6 +67,30 @@ def test_validate_semantics_handles_unparseable_verdict(fake_schema_text):
     client = FakeParseClient(None)
     out = validate_semantics(
         client,
+        question="q",
+        sql="SELECT 1",
+        schema_text=fake_schema_text,
+        result_sample="1 row(s).\nn\n1",
+    )
+    assert isinstance(out, Stage2Verdict)
+    assert out.valid is False
+    assert out.issues
+
+
+class _RaisingParseMessages:
+    def parse(self, **kwargs):
+        # Same failure the SDK raises when the JSON verdict is truncated
+        # at max_tokens: validate_json on an incomplete string.
+        pydantic.TypeAdapter(Stage2Verdict).validate_json('{"valid": true, "iss')
+
+
+class _RaisingParseClient:
+    messages = _RaisingParseMessages()
+
+
+def test_validate_semantics_handles_truncated_json(fake_schema_text):
+    out = validate_semantics(
+        _RaisingParseClient(),
         question="q",
         sql="SELECT 1",
         schema_text=fake_schema_text,

@@ -5,6 +5,7 @@ A pure function of (question, sql, schema, result sample) -> verdict.
 
 from __future__ import annotations
 
+import pydantic
 from pydantic import BaseModel, Field
 
 STAGE2_MODEL = "claude-sonnet-5"
@@ -54,20 +55,33 @@ def validate_semantics(
     schema_text: str,
     result_sample: str,
 ) -> Stage2Verdict:
-    response = client.messages.parse(
-        model=STAGE2_MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": _user_content(
-                    question, sql, schema_text, result_sample
-                ),
-            }
-        ],
-        output_format=Stage2Verdict,
-    )
+    try:
+        response = client.messages.parse(
+            model=STAGE2_MODEL,
+            # Generous headroom: claude-sonnet-5 spends part of the budget
+            # on extended thinking before emitting the JSON verdict, and a
+            # tighter cap truncates the verdict into invalid JSON.
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _user_content(
+                        question, sql, schema_text, result_sample
+                    ),
+                }
+            ],
+            output_format=Stage2Verdict,
+        )
+    except pydantic.ValidationError:
+        # `messages.parse` validates the response text eagerly and raises
+        # if it is not complete valid JSON (e.g. truncated at max_tokens).
+        # A Stage 2 that cannot produce a verdict should caveat, not crash.
+        return Stage2Verdict(
+            valid=False,
+            issues=["Stage 2 response could not be parsed (likely truncated)."],
+        )
+
     verdict = response.parsed_output
     if verdict is None:
         return Stage2Verdict(
