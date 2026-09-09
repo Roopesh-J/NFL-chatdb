@@ -6,13 +6,13 @@
 
 **Architecture:** A local read-only SQLite database is populated from three nflverse datasets via a one-time ingestion script. Queries flow through a two-stage pipeline built on the raw Anthropic SDK: Stage 1 (Claude Haiku 4.5) generates SQL and self-corrects on execution errors in a hand-rolled loop capped at 2 attempts; Stage 2 (Claude Sonnet 5) is a pure function that validates the successful query against the original question with forced structured output. A pipeline orchestrator wires the two together with a single semantic-mismatch retry, then returns the answer (caveated if still mismatched). A thin `argparse` CLI is the only interface.
 
-**Tech Stack:** Python 3.12, `uv` for env/dependency management, `anthropic` SDK, `nfl_data_py` for ingestion, `pandas` (transitive via `nfl_data_py`), standard-library `sqlite3`, `pydantic` for Stage 2's structured output, `pytest` for tests.
+**Tech Stack:** Python 3.11, `uv` for env/dependency management, `anthropic` SDK, `nfl_data_py` for ingestion, `pandas` (transitive via `nfl_data_py`), standard-library `sqlite3`, `pydantic` for Stage 2's structured output, `pytest` for tests.
 
 **Spec:** `docs/superpowers/specs/2026-09-01-nfl-chat-db-design.md` — read it alongside this plan; the plan argues from it.
 
 ## Global Constraints
 
-- **Python version:** 3.12 (`.python-version` pins `3.12`).
+- **Python version:** 3.11 (`.python-version` pins `3.11`). Rationale: the spec-mandated `nfl_data_py` (0.3.3, latest) hard-caps `pandas<2.0` / `numpy<2.0`, and `pandas 1.5.3` (newest `<2.0`) has no cp312 wheels and fails to build on 3.12. 3.11 has prebuilt wheels for the whole chain. `uv` auto-downloads a managed CPython 3.11.
 - **Dependency manager:** `uv` only. Every run command is `uv run ...`; every dependency add is `uv add ...`. Do not create a bare `venv` or use `pip` directly.
 - **Stage 1 model:** exact string `claude-haiku-4-5`. Never append a date suffix.
 - **Stage 2 model:** exact string `claude-sonnet-5`. Never append a date suffix.
@@ -24,7 +24,12 @@
 - **Package name:** `nfl_chatdb`, importable as `import nfl_chatdb`. Source lives under `src/nfl_chatdb/`.
 - **API key:** read from `ANTHROPIC_API_KEY` in the environment (or an `ant auth login` profile). Never hardcode. `.env` is git-ignored; `.env.example` is committed.
 - **Anthropic SDK note:** `anthropic` 1.x is built on `httpx2`. Use `client.messages.create(...)` for Stage 1 and `client.messages.parse(..., output_format=Model)` for Stage 2. Do not use assistant-message prefills (rejected on both models).
-- **Commit after every task** (frequent commits). Each task's final step is a commit.
+- **Commit after every task** (frequent commits). Each task's final step is a commit. The `git commit -m "..."` lines shown in each task are the *subject only* — every commit message must also end with these two trailer lines (blank line before them):
+
+  ```
+  Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+  Claude-Session: https://claude.ai/code/session_01Meh8doDoJB9WWsFfPLeNN9
+  ```
 
 ---
 
@@ -68,7 +73,7 @@ Expected: prints a version (e.g. `uv 0.4.x` or newer).
 - [ ] **Step 2: Create `.python-version`**
 
 ```
-3.12
+3.11
 ```
 
 - [ ] **Step 3: Create `pyproject.toml`**
@@ -79,7 +84,7 @@ name = "nfl-chatdb"
 version = "0.1.0"
 description = "Two-stage natural-language-to-SQL pipeline over NFL statistics"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "anthropic>=1.0",
     "nfl-data-py>=0.3.2",
@@ -254,7 +259,9 @@ def tiny_db(tmp_path):
         INSERT INTO play_by_play VALUES
             (1, '2023_01_A_B', 2023, 1, 'TEN', 'D.Henry', 1, 12),
             (2, '2023_01_A_B', 2023, 1, 'TEN', 'D.Henry', 0, 4),
-            (3, '2023_02_A_C', 2023, 2, 'TEN', 'D.Henry', 1, 3);
+            (3, '2023_02_A_C', 2023, 2, 'TEN', 'D.Henry', 1, 3),
+            (4, '2023_03_A_D', 2023, 3, 'TEN', 'D.Henry', 0, 5),
+            (5, '2023_04_A_E', 2023, 4, 'TEN', 'D.Henry', 0, 8);
         """
     )
     conn.commit()
@@ -280,7 +287,7 @@ Expected: creates `.venv/` and `uv.lock`, installs `anthropic`, `nfl-data-py`, `
 - [ ] **Step 12: Run the smoke test**
 
 Run: `uv run pytest -q`
-Expected: PASS (1 passed). If `nfl-data-py` fails to resolve, check that Python is 3.12 (`uv run python --version`) — `nfl-data-py` has historically lagged on the newest Python.
+Expected: PASS (1 passed). `uv sync` will download a managed CPython 3.11 if one is not already present — that is expected. If `nfl-data-py` still fails to resolve or build, confirm `uv run python --version` reports 3.11.x before investigating further.
 
 - [ ] **Step 13: Commit**
 
@@ -850,7 +857,7 @@ git commit -m "feat: result-sample formatting"
 - Create: `tests/test_stage1_sql.py`
 
 **Interfaces:**
-- Consumes: `nfl_chatdb.database.{QueryError, QueryResult, run_query}`, `nfl_chatdb.formatting.format_result_sample`, the `fake_schema_text` and `tiny_db` fixtures.
+- Consumes: `nfl_chatdb.database.{QueryError, QueryResult, run_query}`, the `fake_schema_text` and `tiny_db` fixtures.
 - Produces:
   - `nfl_chatdb.stage1_sql.STAGE1_MODEL: str` — `"claude-haiku-4-5"`.
   - `nfl_chatdb.stage1_sql.Stage1Result` — dataclass: `sql: str`, `result: QueryResult`, `attempts: int`, `degenerate: bool` (True when the final result executed cleanly but is empty).
@@ -1140,7 +1147,7 @@ def generate_sql(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `uv run pytest tests/test_stage1_sql.py -q`
-Expected: PASS (10 passed)
+Expected: PASS (9 passed)
 
 - [ ] **Step 5: Commit**
 
