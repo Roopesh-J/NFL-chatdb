@@ -91,6 +91,30 @@ def test_run_query_truncates_large_result(tmp_path):
     assert small.truncated is False
 
 
+def test_run_query_times_out_on_slow_query(tiny_db):
+    conn = connect(tiny_db)
+    # A recursive CTE that would take far longer than the limit to finish.
+    slow = (
+        "WITH RECURSIVE seq(n) AS ("
+        "  SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 100000000"
+        ") SELECT COUNT(*) FROM seq"
+    )
+    with pytest.raises(QueryError) as excinfo:
+        run_query(conn, slow, timeout_seconds=0.3)
+    assert "time" in str(excinfo.value).lower()
+
+
+def test_run_query_timeout_does_not_affect_fast_queries(tiny_db):
+    conn = connect(tiny_db)
+    result = run_query(
+        conn, "SELECT COUNT(*) FROM play_by_play", timeout_seconds=0.3
+    )
+    assert result.rows == [(5,)]
+    # the progress handler is cleared afterwards, so a later query is unbounded
+    again = run_query(conn, "SELECT COUNT(*) FROM play_by_play")
+    assert again.rows == [(5,)]
+
+
 def test_connection_is_read_only(tiny_db):
     conn = connect(tiny_db)
     with pytest.raises(sqlite3.OperationalError):

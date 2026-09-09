@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,12 @@ DEFAULT_DB_PATH = Path("data/nfl.db")
 # Upper bound on rows returned by a single query. `play_by_play` has ~400
 # columns, so an unbounded `SELECT *` can pull hundreds of MB into memory.
 MAX_RESULT_ROWS = 10_000
+
+# Wall-clock ceiling on a single query. `play_by_play` is ~200k wide rows
+# with no indexes, so a multi-scan query Stage 1 dreams up can run for a
+# minute or more; without this the desktop app just spins. On timeout the
+# query is aborted and Stage 1 retries with a "too slow" hint.
+DEFAULT_QUERY_TIMEOUT_SECONDS = 25.0
 
 _ALLOWED_LEADING_KEYWORDS = {"SELECT", "WITH"}
 
@@ -59,8 +66,25 @@ def _validate_read_only(sql: str) -> str:
     return without_trailing
 
 
-def run_query(conn: sqlite3.Connection, sql: str) -> QueryResult:
+def run_query(
+    conn: sqlite3.Connection,
+    sql: str,
+    timeout_seconds: float = DEFAULT_QUERY_TIMEOUT_SECONDS,
+) -> QueryResult:
     statement = _validate_read_only(sql)
+
+    deadline = time.monotonic() + timeout_seconds
+    timed_out = False
+
+    def _watchdog() -> int:
+        nonlocal timed_out
+        if time.monotonic() > deadline:
+            timed_out = True
+            return 1  # non-zero aborts the running statement
+        return 0
+
+    # Fires roughly every N SQLite VM steps, during execute() and fetch.
+    conn.set_progress_handler(_watchdog, 2000)
     try:
         cursor = conn.execute(statement)
         fetched = cursor.fetchmany(MAX_RESULT_ROWS + 1)
@@ -68,7 +92,14 @@ def run_query(conn: sqlite3.Connection, sql: str) -> QueryResult:
             [d[0] for d in cursor.description] if cursor.description else []
         )
     except sqlite3.Error as exc:
+        if timed_out:
+            raise QueryError(
+                f"query exceeded the {timeout_seconds:.0f}s time limit "
+                "(too complex, or scanning too much data)"
+            ) from exc
         raise QueryError(str(exc)) from exc
+    finally:
+        conn.set_progress_handler(None, 0)
     truncated = len(fetched) > MAX_RESULT_ROWS
     if truncated:
         fetched = fetched[:MAX_RESULT_ROWS]
