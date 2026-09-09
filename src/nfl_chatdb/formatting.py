@@ -23,3 +23,19 @@ def format_result_sample(result: QueryResult, max_rows: int = 8) -> str:
     lines = [header_line, " | ".join(result.columns)]
     lines.extend(" | ".join(_cell(v) for v in row) for row in shown)
     return "\n".join(lines)
+
+
+def outcome_to_dict(outcome) -> dict:
+    """Serialize a PipelineOutcome for JSON output / the desktop app bridge."""
+    return {
+        "question": outcome.question,
+        "sql": outcome.sql,
+        "columns": outcome.result.columns,
+        "rows": [list(r) for r in outcome.result.rows],
+        "row_count": outcome.result.row_count,
+        "truncated": outcome.result.truncated,
+        "caveated": outcome.caveated,
+        "issues": outcome.verdict.issues,
+        "semantic_retries": outcome.semantic_retries,
+        "stage1_attempts": outcome.stage1_attempts,
+    }

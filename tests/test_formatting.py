@@ -1,5 +1,51 @@
 from nfl_chatdb.database import QueryResult
-from nfl_chatdb.formatting import format_result_sample
+from nfl_chatdb.formatting import format_result_sample, outcome_to_dict
+from nfl_chatdb.pipeline import PipelineOutcome
+from nfl_chatdb.stage2_validate import Stage2Verdict
+
+
+def _outcome(result: QueryResult, verdict: Stage2Verdict, caveated: bool):
+    return PipelineOutcome(
+        question="q",
+        sql="SELECT 1",
+        result=result,
+        verdict=verdict,
+        caveated=caveated,
+        semantic_retries=1 if caveated else 0,
+        stage1_attempts=1,
+    )
+
+
+def test_outcome_to_dict_shape():
+    outcome = _outcome(
+        QueryResult(columns=["a"], rows=[(1,)], row_count=1, truncated=False),
+        Stage2Verdict(valid=True, issues=[]),
+        caveated=False,
+    )
+    assert outcome_to_dict(outcome) == {
+        "question": "q",
+        "sql": "SELECT 1",
+        "columns": ["a"],
+        "rows": [[1]],
+        "row_count": 1,
+        "truncated": False,
+        "caveated": False,
+        "issues": [],
+        "semantic_retries": 0,
+        "stage1_attempts": 1,
+    }
+
+
+def test_outcome_to_dict_surfaces_truncated_and_issues():
+    outcome = _outcome(
+        QueryResult(columns=["a"], rows=[(1,)], row_count=1, truncated=True),
+        Stage2Verdict(valid=False, issues=["wrong season"]),
+        caveated=True,
+    )
+    d = outcome_to_dict(outcome)
+    assert d["truncated"] is True
+    assert d["issues"] == ["wrong season"]
+    assert d["caveated"] is True
 
 
 def test_format_small_result():
