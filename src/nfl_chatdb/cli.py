@@ -8,7 +8,7 @@ import json
 import anthropic
 
 from nfl_chatdb.database import DEFAULT_DB_PATH, QueryError, connect
-from nfl_chatdb.formatting import format_result_sample
+from nfl_chatdb.formatting import format_result_sample, outcome_to_dict
 from nfl_chatdb.pipeline import PipelineOutcome, answer_question
 from nfl_chatdb.schema import load_schema_text
 from nfl_chatdb.stage1_sql import Stage1Error
@@ -33,20 +33,6 @@ def render_outcome(outcome: PipelineOutcome) -> str:
         lines += ["", "⚠ Caveat: this answer may not fully match the question."]
         lines += [f"  - {issue}" for issue in outcome.verdict.issues]
     return "\n".join(lines)
-
-
-def _outcome_to_dict(outcome: PipelineOutcome) -> dict:
-    return {
-        "question": outcome.question,
-        "sql": outcome.sql,
-        "columns": outcome.result.columns,
-        "rows": [list(r) for r in outcome.result.rows],
-        "row_count": outcome.result.row_count,
-        "caveated": outcome.caveated,
-        "issues": outcome.verdict.issues,
-        "semantic_retries": outcome.semantic_retries,
-        "stage1_attempts": outcome.stage1_attempts,
-    }
 
 
 def main(argv=None) -> int:
@@ -79,7 +65,7 @@ def main(argv=None) -> int:
         return 2
 
     if args.json:
-        print(json.dumps(_outcome_to_dict(outcome), indent=2, default=str))
+        print(json.dumps(outcome_to_dict(outcome), indent=2, default=str))
     else:
         print(render_outcome(outcome))
     return 0

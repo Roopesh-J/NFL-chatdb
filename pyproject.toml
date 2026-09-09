@@ -9,10 +9,12 @@ dependencies = [
     "nfl-data-py>=0.3.2",
     "pydantic>=2.0",
     "python-dotenv>=1.2.3",
+    "pywebview>=5.0",
 ]
 
 [project.scripts]
 nfl-chatdb = "nfl_chatdb.cli:main"
+nfl-chatdb-app = "nfl_chatdb.app:main"
 
 [dependency-groups]
 dev = [
