@@ -24,6 +24,15 @@ uv run python -m nfl_chatdb.ingest
 uv run nfl-chatdb "How many rushing touchdowns did Derrick Henry score in 2023?"
 ```
 
+## Desktop app
+
+```bash
+uv run nfl-chatdb-app
+```
+
+A native window with a single question box and an expandable "how this
+was answered" panel (generated SQL, Stage 1 retries, Stage 2 verdict).
+
 ## Test
 
 ```bash

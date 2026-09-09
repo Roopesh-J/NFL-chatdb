@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFL ChatDB</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --border: #d8d8d2;
+    --accent: #12604a;
+    --warn-bg: #fdf3d8;
+    --warn-border: #e0c060;
+    --err-bg: #fbe6e4;
+    --err-border: #d98a80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 28px 22px 60px; }
+  h1 { font-size: 1.25rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
+  form { display: flex; gap: 8px; margin-bottom: 20px; }
+  #q {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+  }
+  #q:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #ask {
+    padding: 10px 18px;
+    font-size: 0.95rem;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  #ask:disabled { opacity: 0.5; cursor: default; }
+  #status { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; }
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: -1px;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .banner {
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid;
+    margin-bottom: 14px;
+    font-size: 0.9rem;
+  }
+  .banner.warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .banner.err { background: var(--err-bg); border-color: var(--err-border); }
+  .banner ul { margin: 6px 0 0; padding-left: 20px; }
+  .table-scroll { overflow-x: auto; margin-bottom: 14px; }
+  table {
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    background: #fff;
+    min-width: 100%;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+    white-space: nowrap;
+  }
+  th { background: #efefe9; }
+  .note { color: var(--muted); font-size: 0.82rem; margin: -6px 0 14px; }
+  details {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.86rem;
+  }
+  summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+  details pre {
+    white-space: pre-wrap;
+    background: #f2f2ec;
+    padding: 8px 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+  }
+  .meta { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NFL ChatDB</h1>
+  <div class="sub">Ask a question about NFL statistics, 2021&ndash;2024.</div>
+
+  <form id="form">
+    <input id="q" type="text" autocomplete="off" placeholder="e.g. How many rushing touchdowns did Derrick Henry score in 2023?">
+    <button id="ask" type="submit" disabled>Ask</button>
+  </form>
+
+  <div id="status"></div>
+  <div id="answer"></div>
+</div>
+
+<script>
+  var q = document.getElementById("q");
+  var ask = document.getElementById("ask");
+  var form = document.getElementById("form");
+  var statusEl = document.getElementById("status");
+  var answerEl = document.getElementById("answer");
+  var busy = false;
+
+  function refreshButton() {
+    ask.disabled = busy || q.value.trim() === "";
+  }
+  q.addEventListener("input", refreshButton);
+
+  function el(tag, className, text) {
+    var e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  function cell(v) {
+    return (v === null || v === undefined) ? "" : String(v);
+  }
+
+  function renderTable(resp) {
+    var scroll = el("div", "table-scroll");
+    var table = document.createElement("table");
+
+    var thead = document.createElement("thead");
+    var htr = document.createElement("tr");
+    (resp.columns || []).forEach(function (c) {
+      htr.appendChild(el("th", null, cell(c)));
+    });
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement("tbody");
+    (resp.rows || []).forEach(function (row) {
+      var tr = document.createElement("tr");
+      row.forEach(function (v) { tr.appendChild(el("td", null, cell(v))); });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    return scroll;
+  }
+
+  function renderDetails(resp) {
+    var d = document.createElement("details");
+    d.appendChild(el("summary", null, "How this was answered"));
+    d.appendChild(el("pre", null, resp.sql || ""));
+    d.appendChild(el("div", "meta", "Stage 1 attempts: " + resp.stage1_attempts));
+    d.appendChild(el("div", "meta",
+      "Stage 2 verdict: " + (resp.caveated ? "caveated" : "valid")));
+    if (resp.issues && resp.issues.length) {
+      var ul = document.createElement("ul");
+      resp.issues.forEach(function (i) { ul.appendChild(el("li", null, i)); });
+      d.appendChild(ul);
+    }
+    return d;
+  }
+
+  function render(resp) {
+    answerEl.innerHTML = "";
+
+    if (resp && resp.error) {
+      var b = el("div", "banner err", resp.error);
+      answerEl.appendChild(b);
+      return;
+    }
+
+    if (resp.caveated) {
+      var warn = el("div", "banner warn",
+        "⚠ This answer may not fully match the question.");
+      if (resp.issues && resp.issues.length) {
+        var ul = document.createElement("ul");
+        resp.issues.forEach(function (i) { ul.appendChild(el("li", null, i)); });
+        warn.appendChild(ul);
+      }
+      answerEl.appendChild(warn);
+    }
+
+    if (!resp.row_count) {
+      answerEl.appendChild(el("p", null, "No rows matched."));
+    } else {
+      answerEl.appendChild(renderTable(resp));
+      if (resp.truncated) {
+        answerEl.appendChild(el("p", "note", "Showing the first 10,000 rows."));
+      }
+    }
+
+    answerEl.appendChild(renderDetails(resp));
+  }
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var question = q.value.trim();
+    if (busy || question === "") return;
+
+    if (!window.pywebview || !window.pywebview.api) {
+      statusEl.textContent = "Bridge not ready yet — try again in a moment.";
+      return;
+    }
+
+    busy = true;
+    refreshButton();
+    q.disabled = true;
+    answerEl.innerHTML = "";
+    statusEl.innerHTML = '<span class="spinner"></span>Thinking…';
+
+    window.pywebview.api.ask(question).then(function (resp) {
+      statusEl.textContent = "";
+      render(resp);
+    }).catch(function (err) {
+      statusEl.textContent = "";
+      render({ error: "Unexpected error: " + err });
+    }).then(function () {
+      busy = false;
+      q.disabled = false;
+      refreshButton();
+      q.focus();
+    });
+  });
+
+  refreshButton();
+</script>
+</body>
+</html>
