@@ -12,6 +12,8 @@ STAGE1_MODEL = "claude-haiku-4-5"
 SYSTEM_PROMPT = (
     "You translate questions about NFL statistics into a single SQLite "
     "SELECT query. Use only the tables and columns in the provided schema. "
+    "When a column lists its allowed values (`-- values: ...`), filter "
+    "using those exact literals; do not invent your own. "
     "Return only the SQL, in a ```sql fenced block, with no explanation. "
     "The query must be a single read-only SELECT (a leading WITH is allowed). "
     "The database covers NFL seasons 2021 through 2024."

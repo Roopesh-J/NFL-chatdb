@@ -22,15 +22,81 @@ def write_dataframe(df, table: str, conn: sqlite3.Connection) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
+# A TEXT column gets its distinct values listed inline in the snapshot
+# when it looks like a real categorical, so Stage 1 filters on true
+# literals (`game_half = 'Half1'`) instead of guessing (`game_half =
+# '1H'`). Two gates:
+#   - at most MAX_ENUM_VALUES distinct values (excludes the 32 team
+#     abbreviations and free text like `desc`)
+#   - non-null in at least MIN_ENUM_COVERAGE of rows (excludes sparse
+#     event columns such as `lateral_rusher_player_name`, which clear
+#     the distinct-count gate only because they are ~always NULL)
+MAX_ENUM_VALUES = 25
+MIN_ENUM_COVERAGE = 0.002
+
+
+def _enum_value_hints(
+    conn: sqlite3.Connection, table: str, text_columns: list[str]
+) -> dict[str, list]:
+    """Map each categorical-looking TEXT column to its sorted distinct values.
+
+    One narrow scan (only the TEXT columns). A column stops accumulating
+    distinct values once it passes the cap, so free-text columns like
+    `desc` cost almost nothing.
+    """
+    if not text_columns:
+        return {}
+
+    total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+    if total == 0:
+        return {}
+    min_rows = max(1, int(total * MIN_ENUM_COVERAGE))
+
+    col_list = ", ".join(f'"{c}"' for c in text_columns)
+    seen: dict[str, set] = {c: set() for c in text_columns}
+    nonnull: dict[str, int] = {c: 0 for c in text_columns}
+    capped: set[str] = set()
+
+    for row in conn.execute(f'SELECT {col_list} FROM "{table}"'):
+        for column, value in zip(text_columns, row):
+            if value is None:
+                continue
+            nonnull[column] += 1
+            if column in capped:
+                continue
+            bucket = seen[column]
+            bucket.add(value)
+            if len(bucket) > MAX_ENUM_VALUES:
+                capped.add(column)
+
+    return {
+        column: sorted(seen[column])
+        for column in text_columns
+        if column not in capped
+        and 1 <= len(seen[column]) <= MAX_ENUM_VALUES
+        and nonnull[column] >= min_rows
+    }
+
+
 def render_schema_snapshot(conn: sqlite3.Connection) -> str:
     blocks: list[str] = []
     for table in TABLES:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+        text_columns = [
+            name for _cid, name, col_type, *_ in rows
+            if (col_type or "").upper() == "TEXT"
+        ]
+        hints = _enum_value_hints(conn, table, text_columns)
+
         lines = [f"Table: {table}"]
         for _cid, name, col_type, *_rest in rows:
             col_type = col_type or "?"
-            lines.append(f"  {name} ({col_type})")
+            line = f"  {name} ({col_type})"
+            if name in hints:
+                listed = ", ".join(f"'{v}'" for v in hints[name])
+                line += f" -- values: {listed}"
+            lines.append(line)
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks) + "\n"
 

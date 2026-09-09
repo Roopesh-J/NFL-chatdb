@@ -4,10 +4,10 @@ Table: play_by_play
   old_game_id_x (TEXT)
   home_team (TEXT)
   away_team (TEXT)
-  season_type (TEXT)
+  season_type (TEXT) -- values: 'POST', 'REG'
   week (INTEGER)
   posteam (TEXT)
-  posteam_type (TEXT)
+  posteam_type (TEXT) -- values: 'away', 'home'
   defteam (TEXT)
   side_of_field (TEXT)
   yardline_100 (REAL)
@@ -15,7 +15,7 @@ Table: play_by_play
   quarter_seconds_remaining (REAL)
   half_seconds_remaining (REAL)
   game_seconds_remaining (REAL)
-  game_half (TEXT)
+  game_half (TEXT) -- values: 'Half1', 'Half2', 'Overtime'
   quarter_end (REAL)
   drive (REAL)
   sp (REAL)
@@ -27,7 +27,7 @@ Table: play_by_play
   ydstogo (REAL)
   ydsnet (REAL)
   desc (TEXT)
-  play_type (TEXT)
+  play_type (TEXT) -- values: 'extra_point', 'field_goal', 'kickoff', 'no_play', 'pass', 'punt', 'qb_kneel', 'qb_spike', 'run'
   yards_gained (REAL)
   shotgun (REAL)
   no_huddle (REAL)
@@ -35,16 +35,16 @@ Table: play_by_play
   qb_kneel (REAL)
   qb_spike (REAL)
   qb_scramble (REAL)
-  pass_length (TEXT)
-  pass_location (TEXT)
+  pass_length (TEXT) -- values: 'deep', 'short'
+  pass_location (TEXT) -- values: 'left', 'middle', 'right'
   air_yards (REAL)
   yards_after_catch (REAL)
-  run_location (TEXT)
-  run_gap (TEXT)
-  field_goal_result (TEXT)
+  run_location (TEXT) -- values: 'left', 'middle', 'right'
+  run_gap (TEXT) -- values: 'end', 'guard', 'tackle'
+  field_goal_result (TEXT) -- values: 'blocked', 'made', 'missed'
   kick_distance (REAL)
-  extra_point_result (TEXT)
-  two_point_conv_result (TEXT)
+  extra_point_result (TEXT) -- values: 'blocked', 'failed', 'good'
+  two_point_conv_result (TEXT) -- values: 'failure', 'success'
   home_timeouts_remaining (REAL)
   away_timeouts_remaining (REAL)
   timeout (REAL)
@@ -276,7 +276,7 @@ Table: play_by_play
   penalty_player_name (TEXT)
   penalty_yards (REAL)
   replay_or_challenge (REAL)
-  replay_or_challenge_result (TEXT)
+  replay_or_challenge_result (TEXT) -- values: 'reversed', 'upheld'
   penalty_type (TEXT)
   defensive_two_point_attempt (REAL)
   defensive_two_point_conv (REAL)
@@ -289,22 +289,22 @@ Table: play_by_play
   cpoe (REAL)
   series (REAL)
   series_success (REAL)
-  series_result (TEXT)
+  series_result (TEXT) -- values: 'End of half', 'Field goal', 'First down', 'Missed field goal', 'Opp touchdown', 'Punt', 'QB kneel', 'Safety', 'Touchdown', 'Turnover', 'Turnover on downs'
   order_sequence (REAL)
   start_time (TEXT)
   time_of_day (TEXT)
   stadium (TEXT)
   weather (TEXT)
   nfl_api_id (TEXT)
-  play_clock (TEXT)
+  play_clock (TEXT) -- values: '0'
   play_deleted (REAL)
-  play_type_nfl (TEXT)
+  play_type_nfl (TEXT) -- values: 'COMMENT', 'END_GAME', 'END_QUARTER', 'FIELD_GOAL', 'FREE_KICK', 'FUMBLE_RECOVERED_BY_OPPONENT', 'GAME_START', 'INTERCEPTION', 'KICK_OFF', 'PASS', 'PAT2', 'PENALTY', 'PUNT', 'RUSH', 'SACK', 'TIMEOUT', 'UNSPECIFIED', 'XP_KICK'
   special_teams_play (REAL)
   st_play_type (TEXT)
   end_clock_time (TEXT)
   end_yard_line (TEXT)
   fixed_drive (REAL)
-  fixed_drive_result (TEXT)
+  fixed_drive_result (TEXT) -- values: 'End of half', 'Field goal', 'Missed field goal', 'Opp touchdown', 'Punt', 'Safety', 'Touchdown', 'Turnover', 'Turnover on downs'
   drive_real_start_time (TEXT)
   drive_play_count (REAL)
   drive_time_of_possession (TEXT)
@@ -314,8 +314,8 @@ Table: play_by_play
   drive_quarter_start (REAL)
   drive_quarter_end (REAL)
   drive_yards_penalized (REAL)
-  drive_start_transition (TEXT)
-  drive_end_transition (TEXT)
+  drive_start_transition (TEXT) -- values: 'BLOCKED_FG', 'BLOCKED_FG,_DOWNS', 'BLOCKED_PUNT', 'BLOCKED_PUNT,_DOWNS', 'DOWNS', 'FUMBLE', 'INTERCEPTION', 'KICKOFF', 'MISSED_FG', 'MUFFED_KICKOFF', 'MUFFED_PUNT', 'ONSIDE_KICK', 'OWN_KICKOFF', 'PUNT'
+  drive_end_transition (TEXT) -- values: 'BLOCKED_FG', 'BLOCKED_FG,_DOWNS', 'BLOCKED_PUNT', 'BLOCKED_PUNT,_DOWNS', 'DOWNS', 'END_GAME', 'END_HALF', 'FIELD_GOAL', 'FUMBLE', 'FUMBLE,_SAFETY', 'INTERCEPTION', 'MISSED_FG', 'PUNT', 'SAFETY', 'TOUCHDOWN'
   drive_game_clock_start (TEXT)
   drive_game_clock_end (TEXT)
   drive_start_yard_line (TEXT)
@@ -324,14 +324,14 @@ Table: play_by_play
   drive_play_id_ended (REAL)
   away_score (INTEGER)
   home_score (INTEGER)
-  location (TEXT)
+  location (TEXT) -- values: 'Home', 'Neutral'
   result (INTEGER)
   total (INTEGER)
   spread_line (REAL)
   total_line (REAL)
   div_game (INTEGER)
-  roof (TEXT)
-  surface (TEXT)
+  roof (TEXT) -- values: 'closed', 'dome', 'open', 'outdoors'
+  surface (TEXT) -- values: '', 'a_turf', 'astroturf', 'fieldturf', 'grass', 'grass ', 'matrixturf', 'sportturf'
   temp (REAL)
   wind (REAL)
   home_coach (TEXT)
@@ -374,7 +374,7 @@ Table: play_by_play
   nflverse_game_id (TEXT)
   old_game_id_y (TEXT)
   possession_team (TEXT)
-  offense_formation (TEXT)
+  offense_formation (TEXT) -- values: 'EMPTY', 'I_FORM', 'JUMBO', 'PISTOL', 'SHOTGUN', 'SINGLEBACK', 'UNDER CENTER', 'WILDCAT'
   offense_personnel (TEXT)
   defenders_in_box (REAL)
   defense_personnel (TEXT)
@@ -386,10 +386,10 @@ Table: play_by_play
   n_defense (REAL)
   ngs_air_yards (REAL)
   time_to_throw (REAL)
-  was_pressure (TEXT)
-  route (TEXT)
-  defense_man_zone_type (TEXT)
-  defense_coverage_type (TEXT)
+  was_pressure (TEXT) -- values: '0', '0.0', '1', '1.0'
+  route (TEXT) -- values: '', 'ANGLE', 'CORNER', 'CROSS', 'DEEP OUT', 'FLAT', 'GO', 'HITCH', 'HITCH/CURL', 'IN', 'IN/DIG', 'OUT', 'POST', 'QUICK OUT', 'SCREEN', 'SHALLOW CROSS/DRAG', 'SLANT', 'SWING', 'TEXAS/ANGLE', 'WHEEL'
+  defense_man_zone_type (TEXT) -- values: '', 'MAN_COVERAGE', 'ZONE_COVERAGE'
+  defense_coverage_type (TEXT) -- values: '2_MAN', 'BLOWN', 'COMBO', 'COVER_0', 'COVER_1', 'COVER_2', 'COVER_3', 'COVER_4', 'COVER_6', 'COVER_9', 'PREVENT'
   offense_names (TEXT)
   defense_names (TEXT)
   offense_positions (TEXT)
@@ -400,7 +400,7 @@ Table: play_by_play
 Table: seasonal_stats
   player_id (TEXT)
   season (INTEGER)
-  season_type (TEXT)
+  season_type (TEXT) -- values: 'REG'
   completions (INTEGER)
   attempts (INTEGER)
   passing_yards (REAL)
@@ -462,11 +462,11 @@ Table: snap_counts
   game_id (TEXT)
   pfr_game_id (TEXT)
   season (INTEGER)
-  game_type (TEXT)
+  game_type (TEXT) -- values: 'CON', 'DIV', 'REG', 'SB', 'WC'
   week (INTEGER)
   player (TEXT)
   pfr_player_id (TEXT)
-  position (TEXT)
+  position (TEXT) -- values: 'C', 'CB', 'DB', 'DE', 'DT', 'FB', 'FS', 'G', 'K', 'LB', 'LS', 'NT', 'P', 'QB', 'RB', 'SS', 'T', 'TE', 'WR'
   team (TEXT)
   opponent (TEXT)
   offense_snaps (REAL)

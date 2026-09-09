@@ -60,6 +60,85 @@ def test_render_schema_snapshot_format(tmp_path):
     assert "\n\nTable: seasonal_stats" in snapshot
 
 
+def test_render_schema_snapshot_lists_low_cardinality_text_values(tmp_path):
+    conn = sqlite3.connect(tmp_path / "t.db")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE play_by_play (
+                game_half TEXT, play_desc TEXT, posteam TEXT, yards_gained INTEGER
+            );
+            CREATE TABLE seasonal_stats (player_id TEXT, rushing_tds INTEGER);
+            CREATE TABLE snap_counts (pfr_player_id TEXT, offense_snaps INTEGER);
+            """
+        )
+        rows = (
+            [("Half1", f"a play {i}", "TEN", i) for i in range(40)]
+            + [("Half2", f"b play {i}", "KC", i) for i in range(40)]
+            + [("Overtime", f"c play {i}", "SF", i) for i in range(6)]
+        )
+        conn.executemany("INSERT INTO play_by_play VALUES (?,?,?,?)", rows)
+        conn.commit()
+        snapshot = render_schema_snapshot(conn)
+    finally:
+        conn.close()
+
+    assert (
+        "game_half (TEXT) -- values: 'Half1', 'Half2', 'Overtime'" in snapshot
+    )
+    # free-text column: too many distinct values, no list
+    assert "play_desc (TEXT) --" not in snapshot
+    # numeric column: untouched
+    assert "  yards_gained (INTEGER)" in snapshot
+
+
+def test_render_schema_snapshot_skips_sparse_text_columns(tmp_path):
+    conn = sqlite3.connect(tmp_path / "t.db")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE play_by_play (game_half TEXT, lateral_name TEXT);
+            CREATE TABLE seasonal_stats (player_id TEXT);
+            CREATE TABLE snap_counts (pfr_player_id TEXT);
+            """
+        )
+        rows = [("Half1", None)] * 4000 + [
+            ("Half2", name) for name in ("A.Smith", "B.Jones", "C.Lee")
+        ]
+        conn.executemany("INSERT INTO play_by_play VALUES (?,?)", rows)
+        conn.commit()
+        snapshot = render_schema_snapshot(conn)
+    finally:
+        conn.close()
+    # dense categorical: listed
+    assert "game_half (TEXT) -- values: 'Half1', 'Half2'" in snapshot
+    # 3 non-null rows out of ~4000: below the coverage floor, not listed
+    assert "lateral_name (TEXT) --" not in snapshot
+    assert "  lateral_name (TEXT)\n" in snapshot
+
+
+def test_render_schema_snapshot_skips_high_cardinality_text(tmp_path):
+    conn = sqlite3.connect(tmp_path / "t.db")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE play_by_play (label TEXT);
+            CREATE TABLE seasonal_stats (player_id TEXT);
+            CREATE TABLE snap_counts (pfr_player_id TEXT);
+            """
+        )
+        conn.executemany(
+            "INSERT INTO play_by_play VALUES (?)",
+            [(f"v{i}",) for i in range(40)],
+        )
+        conn.commit()
+        snapshot = render_schema_snapshot(conn)
+    finally:
+        conn.close()
+    assert "  label (TEXT)\n" in snapshot
+    assert "label (TEXT) --" not in snapshot
+
+
 def test_add_player_display_name_merges_on_season_and_id():
     seasonal = pd.DataFrame(
         {
