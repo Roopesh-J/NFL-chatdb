@@ -24,6 +24,11 @@ class Api:
         self._client = client
         self._schema_text = schema_text
         self._db_path = db_path
+        self._status = ""
+
+    def get_status(self) -> str:
+        """Latest pipeline stage, polled by the page while `ask` runs."""
+        return self._status
 
     def ask(self, question: str) -> dict:
         question = (question or "").strip()
@@ -35,12 +40,14 @@ class Api:
         except QueryError as err:
             return {"error": str(err)}
 
+        self._status = "Starting"
         try:
             outcome = answer_question(
                 self._client,
                 question,
                 conn=conn,
                 schema_text=self._schema_text,
+                on_progress=lambda msg: setattr(self, "_status", msg),
             )
             return outcome_to_dict(outcome)
         except Stage1Error as err:

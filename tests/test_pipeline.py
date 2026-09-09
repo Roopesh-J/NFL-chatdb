@@ -105,6 +105,25 @@ def test_still_invalid_after_retry_is_caveated(tiny_db, fake_schema_text):
     assert out.verdict.valid is False
 
 
+def test_answer_question_reports_progress(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_ALL_TD, SQL_OK],
+        verdicts=[
+            Stage2Verdict(valid=False, issues=["wrong"], suggested_fix="fix it"),
+            Stage2Verdict(valid=True),
+        ],
+    )
+    seen = []
+    answer_question(
+        client, "rushing TDs", conn=conn, schema_text=fake_schema_text,
+        on_progress=seen.append,
+    )
+    assert seen[0] == "Writing SQL"
+    assert any("Refining" in m for m in seen)
+    assert seen[-1] == "Re-checking the answer"
+
+
 def test_stage1_error_propagates(tiny_db, fake_schema_text):
     from nfl_chatdb.stage1_sql import Stage1Error
 

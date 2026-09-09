@@ -21,6 +21,10 @@ class PipelineOutcome:
     stage1_attempts: int
 
 
+def _noop(_message: str) -> None:
+    pass
+
+
 def answer_question(
     client,
     question: str,
@@ -28,19 +32,24 @@ def answer_question(
     conn,
     schema_text: str,
     max_semantic_retries: int = 1,
+    on_progress=_noop,
 ) -> PipelineOutcome:
+    on_progress("Writing SQL")
     s1 = generate_sql(client, question, schema_text, conn)
     sample = format_result_sample(s1.result)
+    on_progress("Checking the answer")
     verdict = validate_semantics(client, question, s1.sql, schema_text, sample)
 
     retries = 0
     while not verdict.valid and retries < max_semantic_retries:
         retries += 1
+        on_progress(f"Refining (pass {retries + 1})")
         correction = verdict.suggested_fix or "; ".join(verdict.issues)
         s1 = generate_sql(
             client, question, schema_text, conn, correction=correction
         )
         sample = format_result_sample(s1.result)
+        on_progress("Re-checking the answer")
         verdict = validate_semantics(
             client, question, s1.sql, schema_text, sample
         )

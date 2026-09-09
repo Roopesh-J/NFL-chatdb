@@ -211,6 +211,34 @@
     answerEl.appendChild(renderDetails(resp));
   }
 
+  var ticker = null;
+
+  function startTicker() {
+    var started = Date.now();
+    var stage = "Thinking";
+    function paint() {
+      var secs = Math.round((Date.now() - started) / 1000);
+      statusEl.innerHTML =
+        '<span class="spinner"></span>' + stage + "… " + secs + "s";
+    }
+    paint();
+    ticker = setInterval(function () {
+      // Best-effort stage label; the elapsed counter works regardless.
+      if (window.pywebview && window.pywebview.api &&
+          window.pywebview.api.get_status) {
+        window.pywebview.api.get_status().then(function (s) {
+          if (s) stage = s;
+        }).catch(function () {});
+      }
+      paint();
+    }, 1000);
+  }
+
+  function stopTicker() {
+    if (ticker) { clearInterval(ticker); ticker = null; }
+    statusEl.textContent = "";
+  }
+
   form.addEventListener("submit", function (ev) {
     ev.preventDefault();
     var question = q.value.trim();
@@ -225,13 +253,13 @@
     refreshButton();
     q.disabled = true;
     answerEl.innerHTML = "";
-    statusEl.innerHTML = '<span class="spinner"></span>Thinking…';
+    startTicker();
 
     window.pywebview.api.ask(question).then(function (resp) {
-      statusEl.textContent = "";
+      stopTicker();
       render(resp);
     }).catch(function (err) {
-      statusEl.textContent = "";
+      stopTicker();
       render({ error: "Unexpected error: " + err });
     }).then(function () {
       busy = false;
