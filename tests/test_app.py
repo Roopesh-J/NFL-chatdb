@@ -24,7 +24,8 @@ def test_ask_happy_path(tiny_db, fake_schema_text):
         "columns",
         "rows",
         "row_count",
-        "caveated",
+        "answer",
+        "reliable",
         "stage1_attempts",
         "truncated",
     }
@@ -42,26 +43,26 @@ def test_ask_missing_db_returns_error(tmp_path, fake_schema_text):
     assert "not found" in api.ask("anything")["error"]
 
 
-def test_ask_wraps_stage1_error(tiny_db, fake_schema_text):
-    client = ScriptedClient(
-        create_replies=[SQL_BAD, SQL_BAD], verdicts=[]
-    )
+def test_ask_stage1_failure_is_a_degraded_answer_not_an_error(
+    tiny_db, fake_schema_text
+):
+    client = ScriptedClient(create_replies=[SQL_BAD, SQL_BAD], verdicts=[])
     api = Api(client, fake_schema_text, tiny_db)
     d = api.ask("anything")
-    assert "Could not produce a working query" in d["error"]
+    assert "error" not in d
+    assert d["reliable"] is False
+    assert "couldn't answer" in d["answer"].lower()
 
 
-def test_ask_wraps_api_error(monkeypatch, tiny_db, fake_schema_text):
+def test_ask_catches_an_unexpected_exception(monkeypatch, tiny_db, fake_schema_text):
     import nfl_chatdb.app as appmod
 
-    def boom(*a, **k):
-        raise anthropic.APIError(
-            "rate limited", request=None, body=None
-        )
+    def boom(*_a, **_k):
+        raise RuntimeError("something odd")
 
     monkeypatch.setattr(appmod, "answer_question", boom)
     api = Api(object(), fake_schema_text, tiny_db)
-    assert "Anthropic API call failed" in api.ask("anything")["error"]
+    assert "something odd" in api.ask("anything")["error"]
 
 
 def test_main_missing_db_exits_nonzero(tmp_path, monkeypatch, capsys, fake_schema_text):

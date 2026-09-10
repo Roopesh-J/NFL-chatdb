@@ -82,9 +82,7 @@ def test_write_dataframe_replaces_and_counts(tmp_path):
         # replace semantics: writing again does not append
         n2 = write_dataframe(df, "play_by_play", conn)
         assert n2 == 3
-        assert (
-            conn.execute("SELECT COUNT(*) FROM play_by_play").fetchone()[0] == 3
-        )
+        assert conn.execute("SELECT COUNT(*) FROM play_by_play").fetchone()[0] == 3
     finally:
         conn.close()
 
@@ -134,9 +132,7 @@ def test_render_schema_snapshot_lists_low_cardinality_text_values(tmp_path):
     finally:
         conn.close()
 
-    assert (
-        "game_half (TEXT) -- values: 'Half1', 'Half2', 'Overtime'" in snapshot
-    )
+    assert "game_half (TEXT) -- values: 'Half1', 'Half2', 'Overtime'" in snapshot
     # free-text column: too many distinct values, no list
     assert "play_desc (TEXT) --" not in snapshot
     # numeric column: untouched
@@ -225,11 +221,17 @@ def test_ingest_end_to_end(tmp_path):
 
     conn = connect(db_path)
     # dropped columns really are gone from the stored table
-    roster_cols = [
-        r[1] for r in conn.execute("PRAGMA table_info(rosters)")
-    ]
+    roster_cols = [r[1] for r in conn.execute("PRAGMA table_info(rosters)")]
     assert "headshot_url" not in roster_cols
     assert "player_id" in roster_cols
+
+    # every curated snapshot column actually exists in play_by_play — a
+    # typo in _SNAPSHOT_COLUMNS would otherwise silently drop a column
+    pbp_cols = {r[1] for r in conn.execute("PRAGMA table_info(play_by_play)")}
+    from nfl_chatdb.ingest import _SNAPSHOT_COLUMNS
+
+    missing = _SNAPSHOT_COLUMNS["play_by_play"] - pbp_cols
+    assert not missing, f"snapshot names not in play_by_play: {sorted(missing)}"
     # schedules carries game outcomes at game grain
     close = run_query(
         conn,
@@ -241,8 +243,7 @@ def test_ingest_end_to_end(tmp_path):
     # and the large majority of rows resolve to a name.
     named = run_query(
         conn,
-        "SELECT COUNT(*) FROM seasonal_stats "
-        "WHERE player_display_name IS NOT NULL",
+        "SELECT COUNT(*) FROM seasonal_stats WHERE player_display_name IS NOT NULL",
     )
     assert named.rows[0][0] > 400
     henry = run_query(

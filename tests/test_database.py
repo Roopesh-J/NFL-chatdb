@@ -46,6 +46,22 @@ def test_run_query_allows_with_cte(tiny_db):
     assert result.rows == [(5,)]
 
 
+def test_run_query_ignores_double_dash_inside_a_string_literal(tiny_db):
+    conn = connect(tiny_db)
+    result = run_query(
+        conn,
+        "SELECT COUNT(*) AS n FROM play_by_play "
+        "WHERE game_id = '2023_01_A_B' OR game_id = 'x--y'",
+    )
+    assert result.rows == [(2,)]
+
+
+def test_run_query_skips_a_leading_comment(tiny_db):
+    conn = connect(tiny_db)
+    result = run_query(conn, "-- count 2023 plays\nSELECT COUNT(*) FROM play_by_play")
+    assert result.rows == [(5,)]
+
+
 def test_run_query_wraps_sqlite_errors(tiny_db):
     conn = connect(tiny_db)
     with pytest.raises(QueryError) as excinfo:
@@ -106,9 +122,7 @@ def test_run_query_times_out_on_slow_query(tiny_db):
 
 def test_run_query_timeout_does_not_affect_fast_queries(tiny_db):
     conn = connect(tiny_db)
-    result = run_query(
-        conn, "SELECT COUNT(*) FROM play_by_play", timeout_seconds=0.3
-    )
+    result = run_query(conn, "SELECT COUNT(*) FROM play_by_play", timeout_seconds=0.3)
     assert result.rows == [(5,)]
     # the progress handler is cleared afterwards, so a later query is unbounded
     again = run_query(conn, "SELECT COUNT(*) FROM play_by_play")

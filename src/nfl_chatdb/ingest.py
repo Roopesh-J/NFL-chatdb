@@ -29,9 +29,18 @@ SCHEMA_SNAPSHOT_PATH = Path(__file__).parent / "schema_snapshot.txt"
 _DROP_COLUMNS: dict[str, tuple[str, ...]] = {
     "weekly": ("headshot_url",),
     "rosters": (
-        "headshot_url", "espn_id", "sportradar_id", "yahoo_id", "rotowire_id",
-        "pff_id", "pfr_id", "fantasy_data_id", "sleeper_id", "esb_id",
-        "gsis_it_id", "smart_id",
+        "headshot_url",
+        "espn_id",
+        "sportradar_id",
+        "yahoo_id",
+        "rotowire_id",
+        "pff_id",
+        "pfr_id",
+        "fantasy_data_id",
+        "sleeper_id",
+        "esb_id",
+        "gsis_it_id",
+        "smart_id",
     ),
 }
 
@@ -41,35 +50,150 @@ _DROP_COLUMNS: dict[str, tuple[str, ...]] = {
 # lateral/second-tackler event columns, and roster blobs that Stage 1
 # never needs and that just cost prompt tokens on every call.
 _SNAPSHOT_COLUMNS: dict[str, frozenset[str]] = {
-    "play_by_play": frozenset({
-        "play_id", "game_id", "season", "season_type", "week", "game_date",
-        "home_team", "away_team", "posteam", "posteam_type", "defteam",
-        "game_half", "qtr", "down", "ydstogo", "yardline_100", "goal_to_go",
-        "half_seconds_remaining", "game_seconds_remaining", "drive", "desc",
-        "posteam_score", "defteam_score", "score_differential",
-        "total_home_score", "total_away_score", "home_score", "away_score",
-        "result", "spread_line", "total_line",
-        "play_type", "yards_gained", "shotgun", "no_huddle", "qb_dropback",
-        "qb_scramble", "first_down", "third_down_converted",
-        "fourth_down_converted", "penalty", "penalty_yards", "penalty_type",
-        "penalty_team",
-        "passer_player_id", "passer_player_name", "receiver_player_id",
-        "receiver_player_name", "pass_attempt", "complete_pass",
-        "incomplete_pass", "passing_yards", "receiving_yards", "air_yards",
-        "yards_after_catch", "pass_location", "pass_length", "interception",
-        "rusher_player_id", "rusher_player_name", "rush_attempt",
-        "rushing_yards", "run_location", "run_gap",
-        "touchdown", "pass_touchdown", "rush_touchdown", "return_touchdown",
-        "td_player_name", "field_goal_attempt", "field_goal_result",
-        "extra_point_result", "two_point_conv_result", "sack", "qb_hit",
-        "fumble", "fumble_lost", "safety",
-        "ep", "epa", "wp", "wpa", "air_epa", "yac_epa", "cp", "cpoe",
-        "success", "qb_epa", "xpass", "pass_oe",
-        "roof", "surface", "temp", "wind", "div_game", "series_result",
-        "fixed_drive_result", "offense_formation", "defenders_in_box",
-        "number_of_pass_rushers", "was_pressure", "route",
-        "defense_man_zone_type", "defense_coverage_type",
-    }),
+    "play_by_play": frozenset(
+        {
+            "play_id",
+            "game_id",
+            "season",
+            "season_type",
+            "week",
+            "game_date",
+            "home_team",
+            "away_team",
+            "posteam",
+            "posteam_type",
+            "defteam",
+            "game_half",
+            "qtr",
+            "down",
+            "ydstogo",
+            "yardline_100",
+            "goal_to_go",
+            "half_seconds_remaining",
+            "game_seconds_remaining",
+            "drive",
+            "desc",
+            "posteam_score",
+            "defteam_score",
+            "score_differential",
+            "total_home_score",
+            "total_away_score",
+            "home_score",
+            "away_score",
+            "result",
+            "spread_line",
+            "total_line",
+            "play_type",
+            "yards_gained",
+            "shotgun",
+            "no_huddle",
+            "qb_dropback",
+            "qb_scramble",
+            "first_down",
+            "third_down_converted",
+            "fourth_down_converted",
+            "penalty",
+            "penalty_yards",
+            "penalty_type",
+            "penalty_team",
+            "passer_player_id",
+            "passer_player_name",
+            "receiver_player_id",
+            "receiver_player_name",
+            "pass_attempt",
+            "complete_pass",
+            "incomplete_pass",
+            "passing_yards",
+            "receiving_yards",
+            "air_yards",
+            "yards_after_catch",
+            "pass_location",
+            "pass_length",
+            "interception",
+            "rusher_player_id",
+            "rusher_player_name",
+            "rush_attempt",
+            "rushing_yards",
+            "run_location",
+            "run_gap",
+            "touchdown",
+            "pass_touchdown",
+            "rush_touchdown",
+            "return_touchdown",
+            "td_player_id",
+            "td_player_name",
+            "field_goal_attempt",
+            "field_goal_result",
+            "kick_distance",
+            "extra_point_result",
+            "two_point_conv_result",
+            "sack",
+            "qb_hit",
+            "tackled_for_loss",
+            "fumble",
+            "fumble_forced",
+            "fumble_lost",
+            "safety",
+            "punt_blocked",
+            # defensive / special-teams player attribution (only source is pbp)
+            "interception_player_id",
+            "interception_player_name",
+            "sack_player_id",
+            "sack_player_name",
+            "pass_defense_1_player_id",
+            "pass_defense_1_player_name",
+            "solo_tackle_1_player_id",
+            "solo_tackle_1_player_name",
+            "assist_tackle_1_player_id",
+            "assist_tackle_1_player_name",
+            "tackle_for_loss_1_player_id",
+            "tackle_for_loss_1_player_name",
+            "qb_hit_1_player_id",
+            "qb_hit_1_player_name",
+            "forced_fumble_player_1_player_id",
+            "forced_fumble_player_1_player_name",
+            "fumble_recovery_1_player_id",
+            "fumble_recovery_1_player_name",
+            "penalty_player_id",
+            "penalty_player_name",
+            "punt_returner_player_id",
+            "punt_returner_player_name",
+            "kickoff_returner_player_id",
+            "kickoff_returner_player_name",
+            "punter_player_id",
+            "punter_player_name",
+            "kicker_player_id",
+            "kicker_player_name",
+            "return_team",
+            "return_yards",
+            "ep",
+            "epa",
+            "wp",
+            "wpa",
+            "air_epa",
+            "yac_epa",
+            "cp",
+            "cpoe",
+            "success",
+            "qb_epa",
+            "xpass",
+            "pass_oe",
+            "roof",
+            "surface",
+            "temp",
+            "wind",
+            "div_game",
+            "series_result",
+            "fixed_drive_result",
+            "offense_formation",
+            "defenders_in_box",
+            "number_of_pass_rushers",
+            "was_pressure",
+            "route",
+            "defense_man_zone_type",
+            "defense_coverage_type",
+        }
+    ),
 }
 
 
@@ -79,6 +203,34 @@ def write_dataframe(df, table: str, conn: sqlite3.Connection) -> int:
         df = df.drop(columns=drop)
     df.to_sql(table, conn, if_exists="replace", index=False)
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+
+
+# Indexes on the columns queries join and filter on most — cheap to build,
+# and they turn the fallback path's game_id joins from scans into lookups.
+_INDEXES: dict[str, tuple[str, ...]] = {
+    "play_by_play": (
+        "game_id",
+        "passer_player_name",
+        "rusher_player_name",
+        "receiver_player_name",
+        "season",
+    ),
+    "weekly": ("player_id", "recent_team", "season"),
+    "schedules": ("game_id", "season"),
+    "seasonal_stats": ("player_id", "player_display_name", "season"),
+    "rosters": ("player_id", "team", "season"),
+}
+
+
+def _create_indexes(conn: sqlite3.Connection) -> None:
+    for table, columns in _INDEXES.items():
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for column in columns:
+            if column in have:
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS "ix_{table}_{column}" '
+                    f'ON "{table}" ("{column}")'
+                )
 
 
 # A TEXT column gets its distinct values listed inline in the snapshot
@@ -117,7 +269,7 @@ def _enum_value_hints(
     capped: set[str] = set()
 
     for row in conn.execute(f'SELECT {col_list} FROM "{table}"'):
-        for column, value in zip(text_columns, row):
+        for column, value in zip(text_columns, row, strict=True):
             if value is None:
                 continue
             nonnull[column] += 1
@@ -148,7 +300,8 @@ def render_schema_snapshot(conn: sqlite3.Connection) -> str:
         if allow is not None:
             rows = [r for r in rows if r[1] in allow]
         text_columns = [
-            name for _cid, name, col_type, *_ in rows
+            name
+            for _cid, name, col_type, *_ in rows
             if (col_type or "").upper() == "TEXT"
         ]
         hints = _enum_value_hints(conn, table, text_columns)
@@ -211,13 +364,16 @@ def ingest(
     conn = sqlite3.connect(db_path)
     try:
         counts = {
-            table: write_dataframe(datasets[table], table, conn)
-            for table in TABLES
+            table: write_dataframe(datasets[table], table, conn) for table in TABLES
         }
+        _create_indexes(conn)
         conn.commit()
-        Path(snapshot_path).write_text(render_schema_snapshot(conn))
+        snapshot = render_schema_snapshot(conn)
     finally:
         conn.close()
+    # Written after the DB commits, so a snapshot-rendering failure can't
+    # leave the committed DB and the on-disk snapshot describing each other.
+    Path(snapshot_path).write_text(snapshot)
     return counts
 
 

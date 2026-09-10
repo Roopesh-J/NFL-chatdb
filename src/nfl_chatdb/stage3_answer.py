@@ -5,13 +5,17 @@ second Stage 2 call: after a retry there is no fresh verdict, so Stage 3
 is the terminal read — it phrases the answer and flags when the result
 does not really answer the question (empty, a degenerate one-row
 "ranking", implausible numbers, an unanswerably vague question).
+
+Stage 3 is cosmetic: if its API call fails it degrades to no sentence
+plus whatever Stage 2 concluded, never an error.
 """
 
 from __future__ import annotations
 
-import pydantic
+import anthropic
 from pydantic import BaseModel
 
+from nfl_chatdb.model import Usage, call_structured
 from nfl_chatdb.stage2_validate import Stage2Verdict
 
 STAGE3_MODEL = "claude-haiku-4-5"
@@ -50,8 +54,7 @@ def _user_content(
     if not verdict.valid and verdict.issues:
         parts += [
             "",
-            "A reviewer flagged this query - weigh these when judging "
-            "reliability:",
+            "A reviewer flagged this query - weigh these when judging reliability:",
             "\n".join(f"- {issue}" for issue in verdict.issues),
         ]
     return "\n".join(parts)
@@ -63,28 +66,24 @@ def synthesize_answer(
     sql: str,
     result_sample: str,
     verdict: Stage2Verdict,
+    *,
+    usage: Usage | None = None,
 ) -> AnswerSummary:
     try:
-        response = client.messages.parse(
+        summary = call_structured(
+            client,
             model=STAGE3_MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": _user_content(
-                        question, sql, result_sample, verdict
-                    ),
-                }
-            ],
+            schema_text="",
+            instruction=SYSTEM_PROMPT,
+            user_content=_user_content(question, sql, result_sample, verdict),
             output_format=AnswerSummary,
+            max_tokens=1024,
+            usage=usage,
         )
-        summary = response.parsed_output
-    except pydantic.ValidationError:
+    except anthropic.AnthropicError:
         summary = None
 
     if summary is None:
-        # Fall back to the table with no sentence; trust Stage 2's verdict
-        # for the reliability flag.
+        # No sentence; fall back to Stage 2's judgment for the flag.
         return AnswerSummary(answer="", reliable=verdict.valid)
     return summary

@@ -37,8 +37,10 @@ def test_synthesize_returns_summary():
     summary = AnswerSummary(answer="Mahomes, 33-11 (.750).", reliable=True)
     client = FakeClient(summary)
     out = synthesize_answer(
-        client, "best QB record in one-score games?",
-        "SELECT ...", "1 row(s).\nqb | w | l\nMahomes | 33 | 11",
+        client,
+        "best QB record in one-score games?",
+        "SELECT ...",
+        "1 row(s).\nqb | w | l\nMahomes | 33 | 11",
         Stage2Verdict(valid=True),
     )
     assert out is summary
@@ -48,7 +50,10 @@ def test_synthesize_returns_summary():
 def test_verdict_issues_reach_the_prompt_when_invalid():
     client = FakeClient(AnswerSummary(answer="x", reliable=False))
     synthesize_answer(
-        client, "q", "SELECT 1", "1 row",
+        client,
+        "q",
+        "SELECT 1",
+        "1 row",
         Stage2Verdict(valid=False, issues=["sample of one game"]),
     )
     sent = str(client.calls[0]["messages"])
@@ -59,13 +64,21 @@ def test_parse_failure_falls_back_to_verdict():
     err = pydantic.ValidationError.from_exception_data("AnswerSummary", [])
     client = FakeClient(err)
     out = synthesize_answer(
-        client, "q", "SELECT 1", "1 row", Stage2Verdict(valid=True),
+        client,
+        "q",
+        "SELECT 1",
+        "1 row",
+        Stage2Verdict(valid=True),
     )
     assert out.answer == ""
     assert out.reliable is True
 
     out2 = synthesize_answer(
-        client, "q", "SELECT 1", "0 rows", Stage2Verdict(valid=False),
+        client,
+        "q",
+        "SELECT 1",
+        "0 rows",
+        Stage2Verdict(valid=False),
     )
     assert out2.reliable is False
 
@@ -73,7 +86,11 @@ def test_parse_failure_falls_back_to_verdict():
 def test_none_output_falls_back():
     client = FakeClient(None)
     out = synthesize_answer(
-        client, "q", "SELECT 1", "1 row", Stage2Verdict(valid=True),
+        client,
+        "q",
+        "SELECT 1",
+        "1 row",
+        Stage2Verdict(valid=True),
     )
     assert out.answer == ""
     assert out.reliable is True

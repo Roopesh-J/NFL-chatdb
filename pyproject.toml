@@ -19,6 +19,8 @@ nfl-chatdb-app = "nfl_chatdb.app:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
 ]
 
 [build-system]
@@ -34,3 +36,17 @@ markers = [
     "live: test makes real network/API calls (deselected by default; run with -m live)",
 ]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+# Plan/spec docs carry frozen code snippets — don't reformat their fences.
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+# E501 (line length) is left to review, not the linter.
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+# pyright config lives in pyrightconfig.json — its TOML parser trips on
+# this file's [dependency-groups] table.

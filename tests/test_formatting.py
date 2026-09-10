@@ -1,54 +1,67 @@
 from nfl_chatdb.database import QueryResult
 from nfl_chatdb.formatting import format_result_sample, outcome_to_dict
 from nfl_chatdb.pipeline import PipelineOutcome
-from nfl_chatdb.stage2_validate import Stage2Verdict
 
 
-def _outcome(result: QueryResult, verdict: Stage2Verdict, caveated: bool):
-    return PipelineOutcome(
+def _outcome(**over) -> PipelineOutcome:
+    base = dict(
         question="q",
         sql="SELECT 1",
-        result=result,
-        verdict=verdict,
-        caveated=caveated,
-        semantic_retries=1 if caveated else 0,
+        result=QueryResult(columns=["a"], rows=[(1,)], row_count=1),
+        answer="One.",
+        reliable=True,
         stage1_attempts=1,
+        semantic_retries=0,
+        stage2_valid=True,
+        stage2_issues=[],
     )
+    base.update(over)
+    return PipelineOutcome(**base)  # type: ignore[arg-type]
 
 
 def test_outcome_to_dict_shape():
-    outcome = _outcome(
-        QueryResult(columns=["a"], rows=[(1,)], row_count=1, truncated=False),
-        Stage2Verdict(valid=True, issues=[]),
-        caveated=False,
-    )
-    assert outcome_to_dict(outcome) == {
+    assert outcome_to_dict(_outcome()) == {
         "question": "q",
         "sql": "SELECT 1",
         "columns": ["a"],
         "rows": [[1]],
         "row_count": 1,
         "truncated": False,
-        "caveated": False,
-        "issues": [],
-        "semantic_retries": 0,
-        "stage1_attempts": 1,
-        "answer": "",
+        "answer": "One.",
         "reliable": True,
+        "stage1_attempts": 1,
+        "semantic_retries": 0,
+        "stage2_valid": True,
+        "stage2_issues": [],
         "fallback_note": None,
+        "elapsed_s": 0.0,
+        "cost_usd": 0.0,
+        "model_calls": 0,
     }
 
 
-def test_outcome_to_dict_surfaces_truncated_and_issues():
-    outcome = _outcome(
-        QueryResult(columns=["a"], rows=[(1,)], row_count=1, truncated=True),
-        Stage2Verdict(valid=False, issues=["wrong season"]),
-        caveated=True,
+def test_outcome_to_dict_surfaces_stage2_and_reliability():
+    d = outcome_to_dict(
+        _outcome(
+            reliable=False,
+            stage2_valid=False,
+            stage2_issues=["wrong season"],
+            result=QueryResult(columns=["a"], rows=[(1,)], row_count=1, truncated=True),
+        )
     )
-    d = outcome_to_dict(outcome)
     assert d["truncated"] is True
-    assert d["issues"] == ["wrong season"]
-    assert d["caveated"] is True
+    assert d["reliable"] is False
+    assert d["stage2_valid"] is False
+    assert d["stage2_issues"] == ["wrong season"]
+
+
+def test_outcome_to_dict_coerces_non_json_cells():
+    d = outcome_to_dict(
+        _outcome(
+            result=QueryResult(columns=["blob"], rows=[(b"\x00\x01",)], row_count=1)
+        )
+    )
+    assert d["rows"] == [["b'\\x00\\x01'"]]
 
 
 def test_format_small_result():
@@ -69,7 +82,6 @@ def test_format_truncates_and_reports_total():
     r = QueryResult(columns=["name", "n"], rows=rows, row_count=20)
     out = format_result_sample(r, max_rows=5)
     assert out.splitlines()[0] == "20 row(s). Showing first 5:"
-    # header + 5 data rows + the header line
     assert len(out.splitlines()) == 7
     assert "p4 | 4" in out
     assert "p5 | 5" not in out

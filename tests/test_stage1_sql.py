@@ -18,8 +18,9 @@ class _Block:
 
 
 class _Response:
-    def __init__(self, text):
+    def __init__(self, text, stop_reason="end_turn"):
         self.content = [_Block(text)]
+        self.stop_reason = stop_reason
 
 
 class FakeMessages:
@@ -56,16 +57,19 @@ def test_extract_sql_language_tagged_fences():
     assert extract_sql("```postgresql\nSELECT 1\n```") == "SELECT 1"
 
 
-def test_extract_sql_fence_and_query_on_one_line():
-    # no newline after the opening fence — `SELECT` must not be eaten as a tag
-    assert extract_sql("```SELECT n FROM t WHERE x = 1```") == "SELECT n FROM t WHERE x = 1"
-    assert extract_sql("```WITH a AS (SELECT 1) SELECT * FROM a```") == (
+def test_extract_sql_handles_every_fence_shape():
+    # bare fence + SQL on one line
+    assert extract_sql("```SELECT n FROM t```") == "SELECT n FROM t"
+    # language tag + SQL on one line
+    assert extract_sql("```sql SELECT n FROM t```") == "SELECT n FROM t"
+    # empty tag line
+    assert extract_sql("```\nSELECT 1\n```") == "SELECT 1"
+    # leading WITH
+    assert extract_sql("```sql\nWITH a AS (SELECT 1) SELECT * FROM a\n```") == (
         "WITH a AS (SELECT 1) SELECT * FROM a"
     )
-
-
-def test_extract_sql_empty_tag_line():
-    assert extract_sql("```\nSELECT 1\n```") == "SELECT 1"
+    # prose before the fence
+    assert extract_sql("Here:\n```sql\nSELECT 1\n```\nHope that helps") == "SELECT 1"
 
 
 def test_extract_sql_empty_raises():
@@ -76,8 +80,10 @@ def test_extract_sql_empty_raises():
 def test_generate_sql_succeeds_first_try(tiny_db, fake_schema_text):
     conn = connect(tiny_db)
     client = FakeClient(
-        ["```sql\nSELECT SUM(rush_touchdown) AS tds FROM play_by_play "
-         "WHERE season = 2023\n```"]
+        [
+            "```sql\nSELECT SUM(rush_touchdown) AS tds FROM play_by_play "
+            "WHERE season = 2023\n```"
+        ]
     )
     out = generate_sql(client, "How many rushing TDs in 2023?", fake_schema_text, conn)
     assert isinstance(out, Stage1Result)
@@ -138,14 +144,24 @@ def test_generate_sql_empty_result_retries_then_returns_degenerate(
     assert out.result.row_count == 0
 
 
-def test_generate_sql_passes_correction_into_prompt(tiny_db, fake_schema_text):
+def test_generate_sql_passes_retry_context_into_prompt(tiny_db, fake_schema_text):
+    from nfl_chatdb.stage1_sql import RetryContext
+
     conn = connect(tiny_db)
     client = FakeClient(
         ["```sql\nSELECT SUM(rush_touchdown) AS tds FROM play_by_play\n```"]
     )
     generate_sql(
-        client, "q", fake_schema_text, conn,
-        correction="Only count rushing TDs, not receiving TDs.",
+        client,
+        "q",
+        fake_schema_text,
+        conn,
+        retry=RetryContext(
+            correction="Only count rushing TDs, not receiving TDs.",
+            previous_sql="SELECT COUNT(*) FROM play_by_play",
+            previous_sample="1 row(s).\nn\n5",
+        ),
     )
-    first_msgs = client.messages.calls[0]["messages"]
-    assert any("receiving TDs" in str(m["content"]) for m in first_msgs)
+    first = str(client.messages.calls[0]["messages"])
+    assert "receiving TDs" in first
+    assert "SELECT COUNT(*) FROM play_by_play" in first
