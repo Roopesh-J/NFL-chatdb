@@ -500,13 +500,31 @@
 
     var s2 = el("div", "stage-card");
     s2.appendChild(el("div", "name", "Stage 2 · Check"));
-    s2.appendChild(el("span", "pill " + (resp.caveated ? "warn" : "ok"),
-      resp.caveated ? "Caveated" : "Valid"));
+    var s2text = resp.semantic_retries
+      ? "Retried " + resp.semantic_retries + "x"
+      : resp.stage2_valid === false ? "Flagged"
+      : resp.stage2_valid === true ? "Valid"
+      : "Skipped";
+    var s2class = resp.stage2_valid === false ? "warn"
+      : resp.stage2_valid === true ? "ok" : "";
+    s2.appendChild(el("span", "pill " + s2class, s2text));
     stages.appendChild(s2);
+
+    var s3 = el("div", "stage-card");
+    s3.appendChild(el("div", "name", "Stage 3 · Answer"));
+    s3.appendChild(el("span", "pill " + (resp.reliable ? "ok" : "warn"),
+      resp.reliable ? "Reliable" : "Shaky"));
+    stages.appendChild(s3);
     body.appendChild(stages);
 
+    if (resp.stage2_issues && resp.stage2_issues.length) {
+      var ul = document.createElement("ul");
+      resp.stage2_issues.forEach(function (i) {
+        ul.appendChild(el("li", null, i));
+      });
+      body.appendChild(ul);
+    }
     body.appendChild(el("pre", null, resp.sql || ""));
-    // Stage 2's issues are already shown in the caveat banner above.
 
     d.appendChild(body);
     return d;
@@ -535,23 +553,13 @@
       return;
     }
 
-    // Stage 3's plain-English answer leads; its `reliable` flag styles it
-    // and stands in for the old caveat banner.
+    // Stage 3's plain-English answer leads; `reliable` styles it.
     if (resp.answer) {
-      var ans = el("div", "answer" + (resp.reliable ? "" : " shaky"),
-        resp.answer);
-      answerEl.appendChild(ans);
-    } else if (resp.caveated) {
-      var warn = el("div", "banner warn");
-      warn.appendChild(el("strong", null, "Heads up "));
-      warn.appendChild(document.createTextNode(
-        "this answer may not fully match the question."));
-      if (resp.issues && resp.issues.length) {
-        var ul = document.createElement("ul");
-        resp.issues.forEach(function (i) { ul.appendChild(el("li", null, i)); });
-        warn.appendChild(ul);
-      }
-      answerEl.appendChild(warn);
+      answerEl.appendChild(
+        el("div", "answer" + (resp.reliable ? "" : " shaky"), resp.answer));
+    } else if (!resp.reliable) {
+      answerEl.appendChild(el("div", "banner warn",
+        "This answer may not fully match the question — see below."));
     }
 
     if (!resp.row_count) {

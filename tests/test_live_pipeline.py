@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from nfl_chatdb.cli import build_client
+from nfl_chatdb.client import build_client
 from nfl_chatdb.database import DEFAULT_DB_PATH, connect
 from nfl_chatdb.pipeline import answer_question
 from nfl_chatdb.schema import load_schema_text
@@ -59,13 +59,16 @@ def test_ranked_list_question_returns_multiple_rows(client, conn, schema_text):
         schema_text=schema_text,
     )
     assert out.result.row_count >= 3
-    assert not out.caveated
+    assert out.stage2_valid is not False
+    assert out.reliable
 
 
 def test_pipeline_never_raises_on_a_vague_question(client, conn, schema_text):
-    # Should still return something (possibly caveated), not blow up.
+    # Should still return something (possibly flagged), not blow up.
     out = answer_question(
-        client, "Who was the best quarterback in 2023?",
-        conn=conn, schema_text=schema_text,
+        client,
+        "Who was the best quarterback in 2023?",
+        conn=conn,
+        schema_text=schema_text,
     )
     assert out.sql.lower().lstrip().startswith(("select", "with"))

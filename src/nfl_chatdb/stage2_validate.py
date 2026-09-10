@@ -5,10 +5,9 @@ A pure function of (question, sql, schema, result sample) -> verdict.
 
 from __future__ import annotations
 
-import pydantic
 from pydantic import BaseModel, Field
 
-from nfl_chatdb.prompts import cached_schema_system
+from nfl_chatdb.model import Usage, call_structured
 
 STAGE2_MODEL = "claude-sonnet-5"
 
@@ -57,38 +56,28 @@ def validate_semantics(
     sql: str,
     schema_text: str,
     result_sample: str,
+    *,
+    usage: Usage | None = None,
 ) -> Stage2Verdict:
-    try:
-        response = client.messages.parse(
-            model=STAGE2_MODEL,
-            # Generous headroom: claude-sonnet-5 spends part of the budget
-            # on extended thinking before emitting the JSON verdict, and a
-            # tighter cap truncates the verdict into invalid JSON.
-            max_tokens=4096,
-            system=[
-                cached_schema_system(schema_text),
-                {"type": "text", "text": SYSTEM_PROMPT},
-            ],
-            messages=[
-                {
-                    "role": "user",
-                    "content": _user_content(question, sql, result_sample),
-                }
-            ],
-            output_format=Stage2Verdict,
-        )
-    except pydantic.ValidationError:
-        # `messages.parse` validates the response text eagerly and raises
-        # if it is not complete valid JSON (e.g. truncated at max_tokens).
-        # A Stage 2 that cannot produce a verdict should caveat, not crash.
+    # max_tokens headroom: claude-sonnet-5 spends part of the budget on
+    # extended (adaptive) thinking before the JSON verdict — deliberate, it
+    # earns the latency here — and a tight cap truncates the verdict.
+    verdict = call_structured(
+        client,
+        model=STAGE2_MODEL,
+        schema_text=schema_text,
+        instruction=SYSTEM_PROMPT,
+        user_content=_user_content(question, sql, result_sample),
+        output_format=Stage2Verdict,
+        max_tokens=4096,
+        usage=usage,
+    )
+    if verdict is None:
+        # Truncated / unparseable — a Stage 2 that can't produce a verdict
+        # should caveat, not pass silently.
         return Stage2Verdict(
             valid=False,
-            issues=["Stage 2 response could not be parsed (likely truncated)."],
-        )
-
-    verdict = response.parsed_output
-    if verdict is None:
-        return Stage2Verdict(
-            valid=False, issues=["Stage 2 returned no parseable verdict."]
+            issues=["Stage 2 could not produce a verdict."],
+            retry_worthwhile=False,
         )
     return verdict

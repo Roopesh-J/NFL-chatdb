@@ -42,28 +42,32 @@ def connect(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     return sqlite3.connect(uri, uri=True)
 
 
-def _strip_sql_comments(sql: str) -> str:
-    out: list[str] = []
-    for line in sql.splitlines():
-        stripped = line.split("--", 1)[0]
-        out.append(stripped)
-    return "\n".join(out)
+def _strip_leading_comments(sql: str) -> str:
+    """Drop only leading blank lines and full-line ``--`` comments.
+
+    Inline ``--`` (e.g. inside a string literal) is left alone; that's the
+    query author's problem, not ours.
+    """
+    lines = sql.splitlines()
+    i = 0
+    while i < len(lines) and (
+        not lines[i].strip() or lines[i].lstrip().startswith("--")
+    ):
+        i += 1
+    return "\n".join(lines[i:])
 
 
 def _validate_read_only(sql: str) -> str:
-    cleaned = _strip_sql_comments(sql).strip()
+    # The read-only guarantee is the `mode=ro` connection (see `connect`);
+    # writes fail there regardless. This check only gives a clear early
+    # error and keeps a hallucinated `DELETE` from reaching SQLite.
+    cleaned = _strip_leading_comments(sql).strip().rstrip(";").strip()
     if not cleaned:
         raise QueryError("empty SQL statement")
-    # Reject multiple statements (allow a single trailing semicolon).
-    without_trailing = cleaned.rstrip(";").strip()
-    if ";" in without_trailing:
-        raise QueryError("only a single SQL statement is allowed")
-    leading = without_trailing.split(None, 1)[0].upper()
+    leading = cleaned.split(None, 1)[0].upper()
     if leading not in _ALLOWED_LEADING_KEYWORDS:
-        raise QueryError(
-            f"only SELECT / WITH statements are allowed, got: {leading}"
-        )
-    return without_trailing
+        raise QueryError(f"only SELECT / WITH statements are allowed, got: {leading}")
+    return cleaned
 
 
 def run_query(
@@ -88,9 +92,7 @@ def run_query(
     try:
         cursor = conn.execute(statement)
         fetched = cursor.fetchmany(MAX_RESULT_ROWS + 1)
-        columns = (
-            [d[0] for d in cursor.description] if cursor.description else []
-        )
+        columns = [d[0] for d in cursor.description] if cursor.description else []
     except sqlite3.Error as exc:
         if timed_out:
             raise QueryError(

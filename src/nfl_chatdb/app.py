@@ -7,12 +7,11 @@ from pathlib import Path
 
 import anthropic
 
-from nfl_chatdb.cli import build_client
+from nfl_chatdb.client import build_client
 from nfl_chatdb.database import DEFAULT_DB_PATH, QueryError, connect
 from nfl_chatdb.formatting import outcome_to_dict
 from nfl_chatdb.pipeline import answer_question
 from nfl_chatdb.schema import load_schema_text
-from nfl_chatdb.stage1_sql import Stage1Error
 
 _INDEX_HTML = Path(__file__).parent / "web" / "index.html"
 
@@ -24,6 +23,8 @@ class Api:
         self._client = client
         self._schema_text = schema_text
         self._db_path = db_path
+        # Written on the pipeline worker thread, read by get_status on
+        # pywebview's — a plain last-writer-wins string, no lock needed.
         self._status = ""
 
     def get_status(self) -> str:
@@ -50,14 +51,8 @@ class Api:
                 on_progress=lambda msg: setattr(self, "_status", msg),
             )
             return outcome_to_dict(outcome)
-        except Stage1Error as err:
-            return {
-                "error": f"Could not produce a working query: {err.last_error}"
-            }
-        except anthropic.APIError as err:
-            return {"error": f"Anthropic API call failed: {err}"}
-        except QueryError as err:
-            return {"error": str(err)}
+        except Exception as err:  # never let the bridge see a raw exception
+            return {"error": f"Something went wrong: {err}"}
         finally:
             conn.close()
 

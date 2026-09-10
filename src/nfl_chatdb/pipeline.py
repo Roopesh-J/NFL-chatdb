@@ -1,35 +1,37 @@
 """End-to-end orchestration: Stage 1 writes SQL, Stage 2 verifies it (with
-one semantic retry), Stage 3 phrases the settled result."""
+one semantic retry), Stage 3 phrases the settled result.
+
+`answer_question` never raises for a model or API failure — a hard failure
+comes back as a `PipelineOutcome` with `reliable=False` and an explanatory
+`answer`.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+import time
+from dataclasses import dataclass, field
 
-from nfl_chatdb.database import QueryError, QueryResult, run_query
+import anthropic
+
+from nfl_chatdb.database import QueryResult
 from nfl_chatdb.formatting import format_result_sample
-from nfl_chatdb.prompts import cached_schema_system
+from nfl_chatdb.model import Usage
 from nfl_chatdb.stage1_sql import (
     STAGE1_RETRY_MODEL,
-    _reply_text,
-    extract_sql,
+    RetryContext,
+    Stage1Error,
+    Stage1Result,
+    generate_fallback_sql,
     generate_sql,
 )
 from nfl_chatdb.stage2_validate import Stage2Verdict, validate_semantics
-from nfl_chatdb.stage3_answer import AnswerSummary, synthesize_answer
+from nfl_chatdb.stage3_answer import synthesize_answer
+
+log = logging.getLogger("nfl_chatdb.pipeline")
 
 _NO_MATCH_NOTE = "No records in the database match this situation."
-
-_FALLBACK_SYSTEM = (
-    "A query answered a question but returned no rows, most likely because "
-    "it over-filtered (a HAVING threshold, a rare situation). Using the "
-    "schema above, write one "
-    "SQLite SELECT that lists the raw rows relevant to the question - the "
-    "records matching the situation it describes - with NO aggregation, "
-    "GROUP BY, HAVING, window functions, or ranking. Include the columns a "
-    "reader needs to understand the situation. End with LIMIT 50. Return "
-    "only the SQL in a ```sql block. If nothing in the schema could match, "
-    "return exactly: SELECT NULL AS nothing WHERE 0"
-)
+_EMPTY_RESULT = QueryResult(columns=[], rows=[], row_count=0)
 
 
 @dataclass
@@ -37,16 +39,21 @@ class PipelineOutcome:
     question: str
     sql: str
     result: QueryResult
-    verdict: Stage2Verdict
-    caveated: bool
-    semantic_retries: int
+    answer: str
+    reliable: bool
     stage1_attempts: int
-    answer: str = ""
-    reliable: bool = True
+    semantic_retries: int
+    # Stage 2's verdict on the *final* query, or None when a retry made its
+    # verdict stale (the retry wasn't re-verified — Stage 3 is the terminal
+    # read in that case).
+    stage2_valid: bool | None
+    stage2_issues: list[str] = field(default_factory=list)
     fallback_note: str | None = None
+    usage: Usage = field(default_factory=Usage)
+    elapsed_s: float = 0.0
 
 
-def _noop(_message: str) -> None:
+def _noop(_: str) -> None:
     pass
 
 
@@ -58,33 +65,36 @@ def _format_correction(verdict: Stage2Verdict) -> str:
     return "\n".join(f"- {line}" for line in lines)
 
 
-def _fallback_rows(client, question, failed_sql, schema_text, conn):
-    """When a ranking query comes back empty, ask for the raw matching rows.
+def _maybe_fallback(
+    client,
+    question,
+    s1: Stage1Result,
+    verdict,
+    schema_text,
+    conn,
+    on_progress,
+    usage: Usage,
+) -> tuple[str, QueryResult, str | None]:
+    """If a rejected ranking query came back empty, show the raw rows."""
+    if not (s1.result.row_count == 0 and verdict.valid is False):
+        return s1.sql, s1.result, None
 
-    Returns (sql, QueryResult) or None if the query could not be run.
-    """
-    content = "\n".join(
-        [
-            f"Question: {question}",
-            "",
-            "This query answered it but returned no rows:",
-            failed_sql,
-        ]
-    )
-    response = client.messages.create(
-        model=STAGE1_RETRY_MODEL,
-        max_tokens=1500,
-        system=[
-            cached_schema_system(schema_text),
-            {"type": "text", "text": _FALLBACK_SYSTEM},
-        ],
-        messages=[{"role": "user", "content": content}],
-    )
-    sql = extract_sql(_reply_text(response))
+    on_progress("Looking for the underlying data")
     try:
-        return sql, run_query(conn, sql)
-    except QueryError:
-        return None
+        fb = generate_fallback_sql(
+            client, question, s1.sql, schema_text, conn, usage=usage
+        )
+    except anthropic.AnthropicError:
+        fb = None
+
+    if fb is not None and fb[1].row_count > 0:
+        sql, result = fb
+        note = (
+            "Couldn't produce a single answer to this — showing the "
+            f"{result.row_count} record(s) that match the situation."
+        )
+        return sql, result, note
+    return s1.sql, s1.result, _NO_MATCH_NOTE
 
 
 def answer_question(
@@ -96,11 +106,63 @@ def answer_question(
     max_semantic_retries: int = 1,
     on_progress=_noop,
 ) -> PipelineOutcome:
+    started = time.monotonic()
+    usage = Usage()
+
+    def done(outcome: PipelineOutcome) -> PipelineOutcome:
+        outcome.usage = usage
+        outcome.elapsed_s = round(time.monotonic() - started, 1)
+        log.info(
+            "answered",
+            extra={
+                "question": question,
+                "reliable": outcome.reliable,
+                "retries": outcome.semantic_retries,
+                "stage2_valid": outcome.stage2_valid,
+                "fallback": outcome.fallback_note is not None,
+                "calls": usage.calls,
+                "cost_usd": round(usage.cost_usd, 4),
+                "cache_read_tokens": usage.cache_read_tokens,
+                "elapsed_s": outcome.elapsed_s,
+                "sql": outcome.sql,
+            },
+        )
+        return outcome
+
+    def failed(reason: str, sql: str = "") -> PipelineOutcome:
+        return done(
+            PipelineOutcome(
+                question=question,
+                sql=sql,
+                result=_EMPTY_RESULT,
+                answer=f"I couldn't answer that: {reason}",
+                reliable=False,
+                stage1_attempts=0,
+                semantic_retries=0,
+                stage2_valid=None,
+            )
+        )
+
     on_progress("Writing SQL")
-    s1 = generate_sql(client, question, schema_text, conn)
+    try:
+        s1 = generate_sql(client, question, schema_text, conn, usage=usage)
+    except Stage1Error as err:
+        return failed(err.last_error, err.last_sql)
+    except anthropic.AnthropicError as err:
+        return failed(f"the model call failed ({err})")
+
     sample = format_result_sample(s1.result)
     on_progress("Checking the answer")
-    verdict = validate_semantics(client, question, s1.sql, schema_text, sample)
+    try:
+        verdict = validate_semantics(
+            client, question, s1.sql, schema_text, sample, usage=usage
+        )
+    except anthropic.AnthropicError:
+        verdict = Stage2Verdict(
+            valid=False,
+            issues=["Stage 2 could not run — the answer is unverified."],
+            retry_worthwhile=False,
+        )
 
     retries = 0
     while (
@@ -110,40 +172,36 @@ def answer_question(
     ):
         retries += 1
         on_progress(f"Refining (pass {retries + 1})")
-        # One retry only, and Stage 3 is the terminal read — no second
-        # Stage 2 here (a re-check verdict couldn't drive anything anyway).
-        s1 = generate_sql(
-            client,
-            question,
-            schema_text,
-            conn,
-            correction=_format_correction(verdict),
-            previous_sql=s1.sql,
-            previous_sample=sample,
-            model=STAGE1_RETRY_MODEL,
-        )
+        try:
+            s1 = generate_sql(
+                client,
+                question,
+                schema_text,
+                conn,
+                retry=RetryContext(
+                    correction=_format_correction(verdict),
+                    previous_sql=s1.sql,
+                    previous_sample=sample,
+                ),
+                model=STAGE1_RETRY_MODEL,
+                usage=usage,
+            )
+        except (Stage1Error, anthropic.AnthropicError):
+            break  # keep the pre-retry attempt; Stage 3 judges it
         sample = format_result_sample(s1.result)
 
-    final_sql = s1.sql
-    final_result = s1.result
-    fallback_note = None
+    final_sql, final_result, fallback_note = _maybe_fallback(
+        client, question, s1, verdict, schema_text, conn, on_progress, usage
+    )
 
-    # A ranking query that Stage 2 rejected *and* came back empty has almost
-    # certainly over-filtered. Show the raw matching rows instead of nothing.
-    if final_result.row_count == 0 and not verdict.valid:
-        on_progress("Looking for the underlying data")
-        fb = _fallback_rows(client, question, s1.sql, schema_text, conn)
-        if fb is not None and fb[1].row_count > 0:
-            final_sql, final_result = fb
-            fallback_note = (
-                "Couldn't produce a single answer to this — showing the "
-                f"{final_result.row_count} record(s) that match the situation."
-            )
-        else:
-            fallback_note = _NO_MATCH_NOTE
+    # After a retry, `verdict` describes the *previous* query — don't feed
+    # its stale issues to Stage 3 or report them as the final Stage 2 word.
+    stage3_verdict = verdict if retries == 0 else Stage2Verdict(valid=True)
+    stage2_valid = verdict.valid if retries == 0 else None
+    stage2_issues = list(verdict.issues) if retries == 0 else []
 
     if fallback_note is not None:
-        summary = AnswerSummary(answer="", reliable=False)
+        answer, reliable = "", False
     else:
         on_progress("Writing the answer")
         summary = synthesize_answer(
@@ -151,18 +209,24 @@ def answer_question(
             question,
             final_sql,
             format_result_sample(final_result),
-            verdict,
+            stage3_verdict,
+            usage=usage,
         )
+        answer = summary.answer
+        # Stage 3 (Haiku) can only *add* a caveat, never clear Stage 2's.
+        reliable = summary.reliable and (stage2_valid is not False)
 
-    return PipelineOutcome(
-        question=question,
-        sql=final_sql,
-        result=final_result,
-        verdict=verdict,
-        caveated=not summary.reliable,
-        semantic_retries=retries,
-        stage1_attempts=s1.attempts,
-        answer=summary.answer,
-        reliable=summary.reliable,
-        fallback_note=fallback_note,
+    return done(
+        PipelineOutcome(
+            question=question,
+            sql=final_sql,
+            result=final_result,
+            answer=answer,
+            reliable=reliable,
+            stage1_attempts=s1.attempts,
+            semantic_retries=retries,
+            stage2_valid=stage2_valid,
+            stage2_issues=stage2_issues,
+            fallback_note=fallback_note,
+        )
     )

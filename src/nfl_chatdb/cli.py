@@ -7,19 +7,11 @@ import json
 
 import anthropic
 
+from nfl_chatdb.client import build_client
 from nfl_chatdb.database import DEFAULT_DB_PATH, QueryError, connect
 from nfl_chatdb.formatting import format_result_sample, outcome_to_dict
 from nfl_chatdb.pipeline import PipelineOutcome, answer_question
 from nfl_chatdb.schema import load_schema_text
-from nfl_chatdb.stage1_sql import Stage1Error
-
-
-def build_client():
-    from dotenv import load_dotenv
-
-    # Load ANTHROPIC_API_KEY from a local .env if present; a no-op otherwise.
-    load_dotenv()
-    return anthropic.Anthropic()
 
 
 def render_outcome(outcome: PipelineOutcome) -> str:
@@ -30,22 +22,23 @@ def render_outcome(outcome: PipelineOutcome) -> str:
     if outcome.fallback_note:
         lines += ["", outcome.fallback_note]
 
-    retry = (
-        f", then {outcome.semantic_retries} semantic retry"
-        if outcome.semantic_retries
-        else ""
-    )
+    if outcome.semantic_retries:
+        stage2 = f"rejected the first attempt, retried {outcome.semantic_retries}x"
+    elif outcome.stage2_valid is True:
+        stage2 = "valid"
+    elif outcome.stage2_valid is False:
+        stage2 = "flagged — " + "; ".join(outcome.stage2_issues)
+    else:
+        stage2 = "could not run"
+    u = outcome.usage
     lines += [
         "",
         "— how this was answered —",
-        f"Stage 1: wrote SQL{retry}",
-        "Stage 2: "
-        + (
-            "valid"
-            if outcome.verdict.valid
-            else "flagged — " + "; ".join(outcome.verdict.issues)
-        ),
+        f"Stage 1: wrote SQL ({outcome.stage1_attempts} attempt(s))",
+        f"Stage 2: {stage2}",
         f"Stage 3: {'reliable' if outcome.reliable else 'not reliable'}",
+        f"{u.calls} model calls · {outcome.elapsed_s}s · "
+        f"~${u.cost_usd:.4f} · {u.cache_read_tokens:,} cached tokens",
     ]
     return "\n".join(lines)
 
@@ -77,19 +70,10 @@ def main(argv=None) -> int:
         )
         return 2
 
-    try:
-        outcome = answer_question(
-            client, args.question, conn=conn, schema_text=schema_text
-        )
-    except Stage1Error as err:
-        print(f"Could not produce a working query: {err.last_error}")
-        return 1
-    except anthropic.APIError as err:
-        print(f"Anthropic API call failed: {err}")
-        return 2
+    outcome = answer_question(client, args.question, conn=conn, schema_text=schema_text)
 
     if args.json:
-        print(json.dumps(outcome_to_dict(outcome), indent=2, default=str))
+        print(json.dumps(outcome_to_dict(outcome), indent=2))
     else:
         print(render_outcome(outcome))
     return 0
