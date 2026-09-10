@@ -38,5 +38,7 @@ def outcome_to_dict(outcome) -> dict:
         "issues": outcome.verdict.issues,
         "semantic_retries": outcome.semantic_retries,
         "stage1_attempts": outcome.stage1_attempts,
+        "answer": outcome.answer,
+        "reliable": outcome.reliable,
         "fallback_note": outcome.fallback_note,
     }

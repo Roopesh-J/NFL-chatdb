@@ -234,6 +234,21 @@
   .banner ul { margin: 8px 0 0; padding-left: 18px; }
   .banner li { margin: 3px 0; }
 
+  .answer {
+    font-size: 1.15rem;
+    line-height: 1.5;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--db);
+  }
+  .answer.shaky {
+    border-left-color: var(--warn);
+    background: rgba(240, 180, 41, .07);
+  }
+
   .note { color: var(--muted); font-size: .8rem; margin: -6px 0 16px; }
   .empty {
     color: var(--muted);
@@ -520,7 +535,13 @@
       return;
     }
 
-    if (resp.caveated) {
+    // Stage 3's plain-English answer leads; its `reliable` flag styles it
+    // and stands in for the old caveat banner.
+    if (resp.answer) {
+      var ans = el("div", "answer" + (resp.reliable ? "" : " shaky"),
+        resp.answer);
+      answerEl.appendChild(ans);
+    } else if (resp.caveated) {
       var warn = el("div", "banner warn");
       warn.appendChild(el("strong", null, "Heads up "));
       warn.appendChild(document.createTextNode(

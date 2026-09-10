@@ -29,6 +29,38 @@ def test_tables_constant():
     )
 
 
+def test_render_schema_snapshot_trims_play_by_play_columns(tmp_path):
+    conn = sqlite3.connect(tmp_path / "t.db")
+    try:
+        conn.execute(
+            "CREATE TABLE play_by_play ("
+            "  game_id TEXT, epa REAL, yards_gained REAL,"
+            "  total_home_raw_air_epa REAL, lateral_rusher_player_name TEXT,"
+            "  fantasy_player_id TEXT"
+            ")"
+        )
+        snapshot = render_schema_snapshot(conn)
+    finally:
+        conn.close()
+    assert "  game_id (TEXT)" in snapshot
+    assert "  epa (REAL)" in snapshot
+    assert "  yards_gained (REAL)" in snapshot
+    # not on the curated list
+    assert "total_home_raw_air_epa" not in snapshot
+    assert "lateral_rusher_player_name" not in snapshot
+    assert "fantasy_player_id" not in snapshot
+
+
+def test_render_schema_snapshot_keeps_other_tables_whole(tmp_path):
+    conn = sqlite3.connect(tmp_path / "t.db")
+    try:
+        conn.execute("CREATE TABLE weekly (player_id TEXT, some_obscure_col REAL)")
+        snapshot = render_schema_snapshot(conn)
+    finally:
+        conn.close()
+    assert "some_obscure_col" in snapshot  # only play_by_play is trimmed
+
+
 def test_render_schema_snapshot_skips_absent_tables(tmp_path):
     conn = sqlite3.connect(tmp_path / "t.db")
     try:
@@ -112,42 +144,31 @@ def test_render_schema_snapshot_lists_low_cardinality_text_values(tmp_path):
 
 
 def test_render_schema_snapshot_skips_sparse_text_columns(tmp_path):
+    # `weekly` is rendered whole (only play_by_play is column-trimmed).
     conn = sqlite3.connect(tmp_path / "t.db")
     try:
-        conn.executescript(
-            """
-            CREATE TABLE play_by_play (game_half TEXT, lateral_name TEXT);
-            CREATE TABLE seasonal_stats (player_id TEXT);
-            CREATE TABLE snap_counts (pfr_player_id TEXT);
-            """
-        )
-        rows = [("Half1", None)] * 4000 + [
-            ("Half2", name) for name in ("A.Smith", "B.Jones", "C.Lee")
+        conn.execute("CREATE TABLE weekly (position TEXT, note TEXT)")
+        rows = [("QB", None)] * 4000 + [
+            ("RB", name) for name in ("A.Smith", "B.Jones", "C.Lee")
         ]
-        conn.executemany("INSERT INTO play_by_play VALUES (?,?)", rows)
+        conn.executemany("INSERT INTO weekly VALUES (?,?)", rows)
         conn.commit()
         snapshot = render_schema_snapshot(conn)
     finally:
         conn.close()
     # dense categorical: listed
-    assert "game_half (TEXT) -- values: 'Half1', 'Half2'" in snapshot
+    assert "position (TEXT) -- values: 'QB', 'RB'" in snapshot
     # 3 non-null rows out of ~4000: below the coverage floor, not listed
-    assert "lateral_name (TEXT) --" not in snapshot
-    assert "  lateral_name (TEXT)\n" in snapshot
+    assert "note (TEXT) --" not in snapshot
+    assert "  note (TEXT)\n" in snapshot
 
 
 def test_render_schema_snapshot_skips_high_cardinality_text(tmp_path):
     conn = sqlite3.connect(tmp_path / "t.db")
     try:
-        conn.executescript(
-            """
-            CREATE TABLE play_by_play (label TEXT);
-            CREATE TABLE seasonal_stats (player_id TEXT);
-            CREATE TABLE snap_counts (pfr_player_id TEXT);
-            """
-        )
+        conn.execute("CREATE TABLE weekly (label TEXT)")
         conn.executemany(
-            "INSERT INTO play_by_play VALUES (?)",
+            "INSERT INTO weekly VALUES (?)",
             [(f"v{i}",) for i in range(40)],
         )
         conn.commit()

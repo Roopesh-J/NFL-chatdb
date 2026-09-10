@@ -56,6 +56,18 @@ def test_extract_sql_language_tagged_fences():
     assert extract_sql("```postgresql\nSELECT 1\n```") == "SELECT 1"
 
 
+def test_extract_sql_fence_and_query_on_one_line():
+    # no newline after the opening fence — `SELECT` must not be eaten as a tag
+    assert extract_sql("```SELECT n FROM t WHERE x = 1```") == "SELECT n FROM t WHERE x = 1"
+    assert extract_sql("```WITH a AS (SELECT 1) SELECT * FROM a```") == (
+        "WITH a AS (SELECT 1) SELECT * FROM a"
+    )
+
+
+def test_extract_sql_empty_tag_line():
+    assert extract_sql("```\nSELECT 1\n```") == "SELECT 1"
+
+
 def test_extract_sql_empty_raises():
     with pytest.raises(Stage1Error):
         extract_sql("   ")
@@ -72,7 +84,12 @@ def test_generate_sql_succeeds_first_try(tiny_db, fake_schema_text):
     assert out.attempts == 1
     assert out.degenerate is False
     assert out.result.rows == [(2,)]
-    assert client.messages.calls[0]["model"] == STAGE1_MODEL
+    call = client.messages.calls[0]
+    assert call["model"] == STAGE1_MODEL
+    # schema rides a cached system block, not the (volatile) user message
+    assert call["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert "seasonal_stats" in call["system"][0]["text"]
+    assert "seasonal_stats" not in str(call["messages"])
 
 
 def test_generate_sql_retries_on_execution_error(tiny_db, fake_schema_text):

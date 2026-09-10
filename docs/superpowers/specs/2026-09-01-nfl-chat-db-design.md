@@ -138,19 +138,35 @@ output (no free-text critique):
 2. Stage 1 generates SQL, executes it, self-corrects on execution
    errors (up to 2 attempts).
 3. Stage 2 validates the successful query against the original
-   question.
-4. **If valid** → return the result to the user.
-5. **If invalid** → Stage 2's diagnosis is fed back to Stage 1 as a
-   targeted correction instruction (not a blind "try again"). Stage 1
-   regenerates and re-executes (its own 2-attempt execution loop
-   applies again). Stage 2 validates once more. This is the single
-   semantic retry — capped at 1, not "up to N attempts," to bound cost
-   and latency.
-6. **If still invalid after that retry** → **annotate, don't block.**
-   Return the answer along with Stage 2's caveat (e.g., "note: this
-   query only counts rushing TDs, not all TD types") rather than
-   refusing outright. A flagged, caveated answer is more useful — and
-   a better demo of the thesis — than silence.
+   question, and also reports whether a rewrite could plausibly help
+   (`retry_worthwhile`).
+4. **If invalid, retry-worthwhile, and a retry is left** → Stage 2's
+   full issue list plus the rejected SQL and its result go back to
+   Stage 1 as a targeted correction. Stage 1 regenerates (on the
+   stronger model this time). Capped at one semantic retry. There is
+   **no second Stage 2 pass** — a re-check verdict can't drive anything
+   once the retry budget is spent, so Stage 3 is the terminal read.
+5. **If the query returned zero rows and Stage 2 rejected it** →
+   fallback: ask for a raw "list the matching records, no aggregation
+   or ranking, LIMIT 50" query and return those with a note, so an
+   over-filtered ranking shows the underlying data instead of nothing.
+6. **Stage 3 (answer synthesis)** — added 2026-09-10. Runs once on the
+   settled result. Writes a one-to-three-sentence plain-English answer
+   that names any debatable modelling choice ("best" = win %, a
+   minimum-games threshold), and sets `reliable=false` when the result
+   doesn't really answer the question — empty, a one-row ranking on a
+   tiny sample, implausible numbers, an unanswerably vague question.
+   The app leads with this sentence; `reliable` drives the caveat
+   styling. Stage 3 replaces the old "annotate with Stage 2's caveat"
+   step: instead of a raw issue list, the user gets a sentence.
+
+### Prompt caching
+
+The ~6k-token schema snapshot rides a byte-identical, one-hour-cached
+`system` block shared by Stage 1, Stage 2, and the fallback (see
+`prompts.cached_schema_system`). It is written to the cache once per
+model per hour and read back at ~10% price on every later call, instead
+of paying full input price 4-5 times per question.
 
 ## Tech Stack
 
@@ -177,13 +193,16 @@ complex (more tools, more turns).
 
 ## Cost & Latency Controls
 
-- Schema is pre-loaded into the system prompt, not tool-discovered —
-  removes a guaranteed round-trip per query.
+- Schema is pre-loaded into a cached system block, not tool-discovered —
+  removes a round-trip per query, and after the first call it's ~free.
+- Only the curated ~95-column subset of `play_by_play` goes in the
+  snapshot (the DB keeps all ~400).
 - Execution-retry loop (Stage 1) capped at 2 attempts.
-- Semantic-mismatch retry (Stage 2 → Stage 1) capped at 1 attempt.
-- Cheaper/faster model for Stage 1's exploration; stronger model
-  reserved for Stage 2's judgment call, where reasoning quality matters
-  most.
+- Semantic-mismatch retry capped at 1, and skipped entirely when Stage 2
+  says a rewrite won't help.
+- Cheaper/faster model (Haiku) for Stage 1's first pass and Stage 3's
+  phrasing; stronger model (Sonnet) for Stage 2's judgment and the
+  Stage 1 retry.
 
 This is a portfolio MVP, not a production service under real traffic —
 total dollar cost per demo run is small regardless. The caps above are
