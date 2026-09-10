@@ -35,6 +35,43 @@ _DROP_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# `play_by_play` keeps all ~400 columns in the database, but the schema
+# snapshot in the prompt only lists this curated subset — the rest are
+# cumulative EPA/WPA breakdowns, win-probability model internals, rare
+# lateral/second-tackler event columns, and roster blobs that Stage 1
+# never needs and that just cost prompt tokens on every call.
+_SNAPSHOT_COLUMNS: dict[str, frozenset[str]] = {
+    "play_by_play": frozenset({
+        "play_id", "game_id", "season", "season_type", "week", "game_date",
+        "home_team", "away_team", "posteam", "posteam_type", "defteam",
+        "game_half", "qtr", "down", "ydstogo", "yardline_100", "goal_to_go",
+        "half_seconds_remaining", "game_seconds_remaining", "drive", "desc",
+        "posteam_score", "defteam_score", "score_differential",
+        "total_home_score", "total_away_score", "home_score", "away_score",
+        "result", "spread_line", "total_line",
+        "play_type", "yards_gained", "shotgun", "no_huddle", "qb_dropback",
+        "qb_scramble", "first_down", "third_down_converted",
+        "fourth_down_converted", "penalty", "penalty_yards", "penalty_type",
+        "penalty_team",
+        "passer_player_id", "passer_player_name", "receiver_player_id",
+        "receiver_player_name", "pass_attempt", "complete_pass",
+        "incomplete_pass", "passing_yards", "receiving_yards", "air_yards",
+        "yards_after_catch", "pass_location", "pass_length", "interception",
+        "rusher_player_id", "rusher_player_name", "rush_attempt",
+        "rushing_yards", "run_location", "run_gap",
+        "touchdown", "pass_touchdown", "rush_touchdown", "return_touchdown",
+        "td_player_name", "field_goal_attempt", "field_goal_result",
+        "extra_point_result", "two_point_conv_result", "sack", "qb_hit",
+        "fumble", "fumble_lost", "safety",
+        "ep", "epa", "wp", "wpa", "air_epa", "yac_epa", "cp", "cpoe",
+        "success", "qb_epa", "xpass", "pass_oe",
+        "roof", "surface", "temp", "wind", "div_game", "series_result",
+        "fixed_drive_result", "offense_formation", "defenders_in_box",
+        "number_of_pass_rushers", "was_pressure", "route",
+        "defense_man_zone_type", "defense_coverage_type",
+    }),
+}
+
 
 def write_dataframe(df, table: str, conn: sqlite3.Connection) -> int:
     drop = [c for c in _DROP_COLUMNS.get(table, ()) if c in df.columns]
@@ -107,6 +144,9 @@ def render_schema_snapshot(conn: sqlite3.Connection) -> str:
         if not rows:
             continue  # table not in this database (e.g. a test fixture)
         # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+        allow = _SNAPSHOT_COLUMNS.get(table)
+        if allow is not None:
+            rows = [r for r in rows if r[1] in allow]
         text_columns = [
             name for _cid, name, col_type, *_ in rows
             if (col_type or "").upper() == "TEXT"
