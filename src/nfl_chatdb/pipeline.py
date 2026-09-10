@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from nfl_chatdb.database import QueryResult
 from nfl_chatdb.formatting import format_result_sample
-from nfl_chatdb.stage1_sql import generate_sql
+from nfl_chatdb.stage1_sql import STAGE1_RETRY_MODEL, generate_sql
 from nfl_chatdb.stage2_validate import Stage2Verdict, validate_semantics
 
 
@@ -23,6 +23,14 @@ class PipelineOutcome:
 
 def _noop(_message: str) -> None:
     pass
+
+
+def _format_correction(verdict: Stage2Verdict) -> str:
+    """Every issue Stage 2 raised, as a bullet list, plus its suggested fix."""
+    lines = list(verdict.issues)
+    if verdict.suggested_fix:
+        lines.append(f"Suggested fix: {verdict.suggested_fix}")
+    return "\n".join(f"- {line}" for line in lines)
 
 
 def answer_question(
@@ -44,9 +52,15 @@ def answer_question(
     while not verdict.valid and retries < max_semantic_retries:
         retries += 1
         on_progress(f"Refining (pass {retries + 1})")
-        correction = verdict.suggested_fix or "; ".join(verdict.issues)
         s1 = generate_sql(
-            client, question, schema_text, conn, correction=correction
+            client,
+            question,
+            schema_text,
+            conn,
+            correction=_format_correction(verdict),
+            previous_sql=s1.sql,
+            previous_sample=sample,
+            model=STAGE1_RETRY_MODEL,
         )
         sample = format_result_sample(s1.result)
         on_progress("Re-checking the answer")

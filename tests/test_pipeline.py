@@ -88,6 +88,52 @@ def test_semantic_retry_then_valid(tiny_db, fake_schema_text):
     assert "rush_touchdown" in second
 
 
+def test_retry_prompt_carries_all_issues_and_previous_sql(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_ALL_TD, SQL_OK],
+        verdicts=[
+            Stage2Verdict(
+                valid=False,
+                issues=[
+                    "Returns an id, not a readable name.",
+                    "No minimum-games threshold.",
+                ],
+                suggested_fix="Group by the name column and add HAVING.",
+            ),
+            Stage2Verdict(valid=True),
+        ],
+    )
+    answer_question(
+        client, "rushing TDs", conn=conn, schema_text=fake_schema_text,
+    )
+    retry_prompt = str(client.create_calls[1]["messages"])
+    # every issue, not just the suggested_fix
+    assert "Returns an id, not a readable name." in retry_prompt
+    assert "No minimum-games threshold." in retry_prompt
+    assert "Group by the name column and add HAVING." in retry_prompt
+    # and the SQL that was rejected
+    assert "COUNT(*) AS tds" in retry_prompt
+
+
+def test_retry_uses_the_stronger_model(tiny_db, fake_schema_text):
+    from nfl_chatdb.stage1_sql import STAGE1_MODEL, STAGE1_RETRY_MODEL
+
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_ALL_TD, SQL_OK],
+        verdicts=[
+            Stage2Verdict(valid=False, issues=["wrong"], suggested_fix="fix"),
+            Stage2Verdict(valid=True),
+        ],
+    )
+    answer_question(
+        client, "rushing TDs", conn=conn, schema_text=fake_schema_text,
+    )
+    assert client.create_calls[0]["model"] == STAGE1_MODEL
+    assert client.create_calls[1]["model"] == STAGE1_RETRY_MODEL
+
+
 def test_still_invalid_after_retry_is_caveated(tiny_db, fake_schema_text):
     conn = connect(tiny_db)
     bad_verdict = Stage2Verdict(

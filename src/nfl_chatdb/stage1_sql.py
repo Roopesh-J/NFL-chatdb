@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from nfl_chatdb.database import QueryError, QueryResult, run_query
 
 STAGE1_MODEL = "claude-haiku-4-5"
+# The semantic retry is the hard case by definition — the first attempt
+# already failed review. Spend a stronger model on it.
+STAGE1_RETRY_MODEL = "claude-sonnet-5"
 
 SYSTEM_PROMPT = (
     "You translate questions about NFL statistics into a single SQLite "
@@ -54,15 +57,35 @@ def extract_sql(text: str) -> str:
     return sql
 
 
-def _first_user_content(question: str, schema_text: str, correction: str | None) -> str:
+def _first_user_content(
+    question: str,
+    schema_text: str,
+    correction: str | None,
+    previous_sql: str | None,
+    previous_sample: str | None,
+) -> str:
     parts = [
         f"Question: {question}",
         "",
         "Schema:",
         schema_text,
     ]
+    if previous_sql:
+        parts += [
+            "",
+            "A reviewer rejected your previous attempt at this question.",
+            "",
+            "Previous SQL:",
+            previous_sql,
+        ]
+        if previous_sample:
+            parts += ["", "Result it produced:", previous_sample]
     if correction:
-        parts += ["", f"Important correction from a reviewer: {correction}"]
+        parts += [
+            "",
+            "Every point the reviewer raised — address all of them:",
+            correction,
+        ]
     return "\n".join(parts)
 
 
@@ -77,18 +100,23 @@ def generate_sql(
     conn,
     *,
     correction: str | None = None,
+    previous_sql: str | None = None,
+    previous_sample: str | None = None,
+    model: str = STAGE1_MODEL,
     max_attempts: int = 2,
 ) -> Stage1Result:
     messages = [
         {
             "role": "user",
-            "content": _first_user_content(question, schema_text, correction),
+            "content": _first_user_content(
+                question, schema_text, correction, previous_sql, previous_sample
+            ),
         }
     ]
 
     for attempt in range(1, max_attempts + 1):
         response = client.messages.create(
-            model=STAGE1_MODEL,
+            model=model,
             max_tokens=2048,
             system=SYSTEM_PROMPT,
             messages=messages,
