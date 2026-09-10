@@ -6,114 +6,327 @@
 <title>NFL ChatDB</title>
 <style>
   :root {
-    --bg: #f7f7f5;
-    --fg: #1a1a1a;
-    --muted: #666;
-    --border: #d8d8d2;
-    --accent: #12604a;
-    --warn-bg: #fdf3d8;
-    --warn-border: #e0c060;
-    --err-bg: #fbe6e4;
-    --err-border: #d98a80;
+    --bg: #0c0d11;
+    --surface: #15171e;
+    --surface-2: #1d202a;
+    --line: #2b2f3b;
+    --fg: #f3f4f6;
+    --muted: #8b909e;
+    --accent: #e8482b;
+    --ok: #38d074;
+    --warn: #f0b429;
+    --err: #ff5a4e;
+    --display: "Impact", "Haettenschweiler", "Franklin Gothic Bold",
+      "Arial Narrow Bold", "Oswald", sans-serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+      Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      Helvetica, Arial, sans-serif;
-    background: var(--bg);
+    min-height: 100vh;
+    font-family: var(--sans);
     color: var(--fg);
-    line-height: 1.5;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 820px; margin: 0 auto; padding: 28px 22px 60px; }
-  h1 { font-size: 1.25rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
-  form { display: flex; gap: 8px; margin-bottom: 20px; }
+
+  .topbar {
+    border-bottom: 3px solid var(--accent);
+    background: linear-gradient(180deg, #121319, #0c0d11);
+    padding: 16px 24px 14px;
+  }
+  .wordmark {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 30px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    line-height: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .wordmark .mk-nfl { color: var(--accent); }
+  .wordmark .mk-tag {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 26px 24px 72px; }
+
+  form { display: flex; gap: 10px; margin-bottom: 14px; }
   #q {
     flex: 1;
-    padding: 10px 12px;
-    font-size: 0.95rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fff;
+    padding: 13px 14px;
+    font-size: 1rem;
+    font-family: var(--sans);
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
   }
-  #q:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #q::placeholder { color: #5c616e; }
+  #q:focus { outline: none; border-color: var(--accent); }
   #ask {
-    padding: 10px 18px;
-    font-size: 0.95rem;
+    padding: 0 26px;
+    font-family: var(--display);
+    font-size: 20px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: var(--accent);
     color: #fff;
     cursor: pointer;
+    transition: filter .15s ease, transform .05s ease;
   }
-  #ask:disabled { opacity: 0.5; cursor: default; }
-  #status { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; }
-  .spinner {
-    display: inline-block;
-    width: 12px; height: 12px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: -1px;
-    margin-right: 6px;
+  #ask:hover:not(:disabled) { filter: brightness(1.1); }
+  #ask:active:not(:disabled) { transform: translateY(1px); }
+  #ask:disabled { opacity: .4; cursor: default; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .chip {
+    padding: 7px 12px;
+    font-size: .82rem;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .banner {
-    padding: 10px 12px;
-    border-radius: 6px;
-    border: 1px solid;
-    margin-bottom: 14px;
-    font-size: 0.9rem;
+  .chip:hover { color: var(--fg); border-color: var(--accent); }
+
+  .ticker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 24px;
+    margin-bottom: 8px;
   }
-  .banner.warn { background: var(--warn-bg); border-color: var(--warn-border); }
-  .banner.err { background: var(--err-bg); border-color: var(--err-border); }
-  .banner ul { margin: 6px 0 0; padding-left: 20px; }
-  .table-scroll { overflow-x: auto; margin-bottom: 14px; }
-  table {
-    border-collapse: collapse;
-    font-size: 0.88rem;
-    background: #fff;
-    min-width: 100%;
+  .ticker .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1s ease-in-out infinite;
   }
-  th, td {
-    border: 1px solid var(--border);
-    padding: 6px 10px;
+  .ticker .stage {
+    font-family: var(--display);
+    font-size: 17px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .ticker .secs {
+    font-family: var(--mono);
+    font-size: .82rem;
+    color: var(--muted);
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .35; transform: scale(.8); }
+  }
+
+  #answer > * { animation: slidein .22s ease both; }
+  @keyframes slidein {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 26px 28px;
+    margin-bottom: 16px;
+  }
+  .hero .sub {
+    font-family: var(--display);
+    font-size: 22px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--fg);
+    margin-bottom: 2px;
+  }
+  .hero .value {
+    font-family: var(--display);
+    font-size: clamp(52px, 12vw, 104px);
+    line-height: .95;
+    letter-spacing: 1px;
+    color: var(--accent);
+  }
+  .hero .label {
+    font-size: .72rem;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  thead th {
+    font-family: var(--sans);
+    font-size: .7rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
     text-align: left;
+    padding: 11px 14px;
+    background: var(--surface-2);
+    border-bottom: 2px solid var(--accent);
     white-space: nowrap;
   }
-  th { background: #efefe9; }
-  .note { color: var(--muted); font-size: 0.82rem; margin: -6px 0 14px; }
-  details {
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 0.86rem;
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
   }
-  summary { cursor: pointer; color: var(--accent); font-weight: 500; }
-  details pre {
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:nth-child(even) { background: rgba(255, 255, 255, .022); }
+  tbody tr:hover { background: var(--surface-2); }
+  td.num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .banner {
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid;
+    margin-bottom: 16px;
+    font-size: .9rem;
+  }
+  .banner.warn {
+    background: rgba(240, 180, 41, .1);
+    border-color: rgba(240, 180, 41, .45);
+    color: #f6d38a;
+  }
+  .banner.err {
+    background: rgba(255, 90, 78, .1);
+    border-color: rgba(255, 90, 78, .45);
+    color: #ffb3ac;
+  }
+  .banner strong {
+    font-family: var(--display);
+    font-weight: 400;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .banner ul { margin: 8px 0 0; padding-left: 18px; }
+  .banner li { margin: 3px 0; }
+
+  .note { color: var(--muted); font-size: .8rem; margin: -6px 0 16px; }
+  .empty {
+    color: var(--muted);
+    font-family: var(--display);
+    font-size: 20px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  details.pipeline {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  details.pipeline summary {
+    cursor: pointer;
+    padding: 12px 16px;
+    font-family: var(--display);
+    font-size: 15px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    list-style: none;
+  }
+  details.pipeline summary::-webkit-details-marker { display: none; }
+  details.pipeline summary::after { content: " +"; color: var(--accent); }
+  details.pipeline[open] summary::after { content: " \2013"; }
+  .pipeline-body { padding: 4px 16px 16px; }
+  .stages { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .stage-card {
+    flex: 1;
+    min-width: 160px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stage-card .name {
+    font-family: var(--display);
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pill {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 3px 9px;
+    font-size: .72rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--fg);
+  }
+  .pill.ok { color: var(--ok); border-color: rgba(56, 208, 116, .5); }
+  .pill.warn { color: var(--warn); border-color: rgba(240, 180, 41, .5); }
+  details.pipeline pre {
+    font-family: var(--mono);
+    font-size: .82rem;
     white-space: pre-wrap;
-    background: #f2f2ec;
-    padding: 8px 10px;
-    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: #cdd2dc;
+    padding: 12px;
+    border-radius: 8px;
     overflow-x: auto;
+    margin: 0;
   }
-  .meta { color: var(--muted); }
+  .pipeline-body ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
+  .pipeline-body li { margin: 3px 0; font-size: .85rem; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>NFL ChatDB</h1>
-  <div class="sub">Ask a question about NFL statistics, 2021&ndash;2024.</div>
+<header class="topbar">
+  <div class="wordmark">
+    <span><span class="mk-nfl">NFL</span> ChatDB</span>
+    <span class="mk-tag">Two-stage query engine &middot; 2021&ndash;2024</span>
+  </div>
+</header>
 
+<div class="wrap">
   <form id="form">
-    <input id="q" type="text" autocomplete="off" placeholder="e.g. How many rushing touchdowns did Derrick Henry score in 2023?">
+    <input id="q" type="text" autocomplete="off"
+      placeholder="Ask about NFL stats — e.g. rushing TDs by Derrick Henry in 2023">
     <button id="ask" type="submit" disabled>Ask</button>
   </form>
 
-  <div id="status"></div>
+  <div class="chips" id="chips"></div>
+
+  <div class="ticker" id="ticker" hidden>
+    <span class="dot"></span>
+    <span class="stage" id="ticker-stage">Thinking</span>
+    <span class="secs" id="ticker-secs">0s</span>
+  </div>
+
   <div id="answer"></div>
 </div>
 
@@ -121,9 +334,31 @@
   var q = document.getElementById("q");
   var ask = document.getElementById("ask");
   var form = document.getElementById("form");
-  var statusEl = document.getElementById("status");
+  var chipsEl = document.getElementById("chips");
+  var tickerEl = document.getElementById("ticker");
+  var tickerStage = document.getElementById("ticker-stage");
+  var tickerSecs = document.getElementById("ticker-secs");
   var answerEl = document.getElementById("answer");
   var busy = false;
+
+  var EXAMPLES = [
+    "How many rushing touchdowns did Derrick Henry score in 2023?",
+    "Top 5 quarterbacks by passing yards in 2023",
+    "Which team had the best record in one-score games in 2023?",
+    "Justin Jefferson receiving yards in the 2022 regular season"
+  ];
+
+  EXAMPLES.forEach(function (text) {
+    var c = el("button", "chip", text);
+    c.type = "button";
+    c.addEventListener("click", function () {
+      if (busy) return;
+      q.value = text;
+      refreshButton();
+      submit();
+    });
+    chipsEl.appendChild(c);
+  });
 
   function refreshButton() {
     ask.disabled = busy || q.value.trim() === "";
@@ -137,26 +372,92 @@
     return e;
   }
 
+  var NUMERIC = /^-?\d+(\.\d+)?$/;
+
+  function isNumeric(v) {
+    return typeof v === "number" ||
+      (typeof v === "string" && v !== "" && NUMERIC.test(v));
+  }
+
+  function fmtNumber(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return String(v);
+    if (Number.isInteger(n)) {
+      return Math.abs(n) >= 10000 ? n.toLocaleString("en-US") : String(n);
+    }
+    var s = n.toFixed(2).replace(/\.?0+$/, "");
+    return s;
+  }
+
   function cell(v) {
-    return (v === null || v === undefined) ? "" : String(v);
+    if (v === null || v === undefined) return "";
+    return isNumeric(v) ? fmtNumber(v) : String(v);
+  }
+
+  function countUp(node, target) {
+    var dur = 600, start = null, done = false;
+    var decimals = Number.isInteger(target) ? 0 : 2;
+    function finish() {
+      done = true;
+      node.textContent = fmtNumber(target);
+    }
+    function step(ts) {
+      if (done) return;
+      if (start === null) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var val = target * (1 - Math.pow(1 - p, 3));
+      node.textContent = decimals ? val.toFixed(2) : fmtNumber(Math.round(val));
+      if (p < 1) requestAnimationFrame(step);
+      else finish();
+    }
+    requestAnimationFrame(step);
+    // Guarantee the final value even if rAF is throttled (background tab).
+    setTimeout(finish, dur + 80);
+  }
+
+  // A single scalar result (optionally with a leading label column) becomes
+  // a broadcast-style stat card instead of a 1-row table.
+  function heroFrom(resp) {
+    if (resp.row_count !== 1) return null;
+    var cols = resp.columns || [];
+    var row = resp.rows[0];
+    if (cols.length === 1 && isNumeric(row[0])) {
+      return { value: row[0], label: cols[0], sub: null };
+    }
+    if (cols.length === 2 && isNumeric(row[1]) && !isNumeric(row[0])) {
+      return { value: row[1], label: cols[1], sub: String(row[0]) };
+    }
+    return null;
+  }
+
+  function renderHero(hero) {
+    var box = el("div", "hero");
+    if (hero.sub) box.appendChild(el("div", "sub", hero.sub));
+    var value = el("div", "value", "0");
+    box.appendChild(value);
+    box.appendChild(el("div", "label", hero.label));
+    answerEl.appendChild(box);
+    countUp(value, Number(hero.value));
   }
 
   function renderTable(resp) {
     var scroll = el("div", "table-scroll");
     var table = document.createElement("table");
+    var cols = resp.columns || [];
 
     var thead = document.createElement("thead");
     var htr = document.createElement("tr");
-    (resp.columns || []).forEach(function (c) {
-      htr.appendChild(el("th", null, cell(c)));
-    });
+    cols.forEach(function (c) { htr.appendChild(el("th", null, c)); });
     thead.appendChild(htr);
     table.appendChild(thead);
 
     var tbody = document.createElement("tbody");
     (resp.rows || []).forEach(function (row) {
       var tr = document.createElement("tr");
-      row.forEach(function (v) { tr.appendChild(el("td", null, cell(v))); });
+      row.forEach(function (v) {
+        var td = el("td", isNumeric(v) ? "num" : null, cell(v));
+        tr.appendChild(td);
+      });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -164,18 +465,30 @@
     return scroll;
   }
 
-  function renderDetails(resp) {
-    var d = document.createElement("details");
+  function renderPipeline(resp) {
+    var d = el("details", "pipeline");
     d.appendChild(el("summary", null, "How this was answered"));
-    d.appendChild(el("pre", null, resp.sql || ""));
-    d.appendChild(el("div", "meta", "Stage 1 attempts: " + resp.stage1_attempts));
-    d.appendChild(el("div", "meta",
-      "Stage 2 verdict: " + (resp.caveated ? "caveated" : "valid")));
-    if (resp.issues && resp.issues.length) {
-      var ul = document.createElement("ul");
-      resp.issues.forEach(function (i) { ul.appendChild(el("li", null, i)); });
-      d.appendChild(ul);
-    }
+
+    var body = el("div", "pipeline-body");
+
+    var stages = el("div", "stages");
+    var s1 = el("div", "stage-card");
+    s1.appendChild(el("div", "name", "Stage 1 · SQL"));
+    s1.appendChild(el("span", "pill",
+      resp.stage1_attempts + (resp.stage1_attempts === 1 ? " attempt" : " attempts")));
+    stages.appendChild(s1);
+
+    var s2 = el("div", "stage-card");
+    s2.appendChild(el("div", "name", "Stage 2 · Check"));
+    s2.appendChild(el("span", "pill " + (resp.caveated ? "warn" : "ok"),
+      resp.caveated ? "Caveated" : "Valid"));
+    stages.appendChild(s2);
+    body.appendChild(stages);
+
+    body.appendChild(el("pre", null, resp.sql || ""));
+    // Stage 2's issues are already shown in the caveat banner above.
+
+    d.appendChild(body);
     return d;
   }
 
@@ -183,14 +496,18 @@
     answerEl.innerHTML = "";
 
     if (resp && resp.error) {
-      var b = el("div", "banner err", resp.error);
+      var b = el("div", "banner err");
+      b.appendChild(el("strong", null, "Error "));
+      b.appendChild(document.createTextNode(resp.error));
       answerEl.appendChild(b);
       return;
     }
 
     if (resp.caveated) {
-      var warn = el("div", "banner warn",
-        "⚠ This answer may not fully match the question.");
+      var warn = el("div", "banner warn");
+      warn.appendChild(el("strong", null, "Heads up "));
+      warn.appendChild(document.createTextNode(
+        "this answer may not fully match the question."));
       if (resp.issues && resp.issues.length) {
         var ul = document.createElement("ul");
         resp.issues.forEach(function (i) { ul.appendChild(el("li", null, i)); });
@@ -200,34 +517,35 @@
     }
 
     if (!resp.row_count) {
-      answerEl.appendChild(el("p", null, "No rows matched."));
+      answerEl.appendChild(el("div", "empty", "No rows matched"));
     } else {
-      answerEl.appendChild(renderTable(resp));
+      var hero = heroFrom(resp);
+      if (hero) renderHero(hero);
+      else answerEl.appendChild(renderTable(resp));
       if (resp.truncated) {
-        answerEl.appendChild(el("p", "note", "Showing the first 10,000 rows."));
+        answerEl.appendChild(el("div", "note", "Showing the first 10,000 rows."));
       }
     }
 
-    answerEl.appendChild(renderDetails(resp));
+    answerEl.appendChild(renderPipeline(resp));
   }
 
   var ticker = null;
 
   function startTicker() {
     var started = Date.now();
-    var stage = "Thinking";
+    tickerStage.textContent = "Thinking";
+    tickerSecs.textContent = "0s";
+    tickerEl.hidden = false;
     function paint() {
-      var secs = Math.round((Date.now() - started) / 1000);
-      statusEl.innerHTML =
-        '<span class="spinner"></span>' + stage + "… " + secs + "s";
+      tickerSecs.textContent =
+        Math.round((Date.now() - started) / 1000) + "s";
     }
-    paint();
     ticker = setInterval(function () {
-      // Best-effort stage label; the elapsed counter works regardless.
       if (window.pywebview && window.pywebview.api &&
           window.pywebview.api.get_status) {
         window.pywebview.api.get_status().then(function (s) {
-          if (s) stage = s;
+          if (s) tickerStage.textContent = s;
         }).catch(function () {});
       }
       paint();
@@ -236,16 +554,17 @@
 
   function stopTicker() {
     if (ticker) { clearInterval(ticker); ticker = null; }
-    statusEl.textContent = "";
+    tickerEl.hidden = true;
   }
 
-  form.addEventListener("submit", function (ev) {
-    ev.preventDefault();
+  function submit() {
     var question = q.value.trim();
     if (busy || question === "") return;
 
     if (!window.pywebview || !window.pywebview.api) {
-      statusEl.textContent = "Bridge not ready yet — try again in a moment.";
+      answerEl.innerHTML = "";
+      var b = el("div", "banner err", "Bridge not ready yet — try again in a moment.");
+      answerEl.appendChild(b);
       return;
     }
 
@@ -267,6 +586,11 @@
       refreshButton();
       q.focus();
     });
+  }
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    submit();
   });
 
   refreshButton();
