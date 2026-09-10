@@ -4,10 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from nfl_chatdb.database import QueryResult
+from nfl_chatdb.database import QueryError, QueryResult, run_query
 from nfl_chatdb.formatting import format_result_sample
-from nfl_chatdb.stage1_sql import STAGE1_RETRY_MODEL, generate_sql
+from nfl_chatdb.stage1_sql import (
+    STAGE1_RETRY_MODEL,
+    _reply_text,
+    extract_sql,
+    generate_sql,
+)
 from nfl_chatdb.stage2_validate import Stage2Verdict, validate_semantics
+
+_NO_MATCH_NOTE = "No records in the database match this situation."
+
+_FALLBACK_SYSTEM = (
+    "A query answered a question but returned no rows, most likely because "
+    "it over-filtered (a HAVING threshold, a rare situation). Write one "
+    "SQLite SELECT that lists the raw rows relevant to the question - the "
+    "records matching the situation it describes - with NO aggregation, "
+    "GROUP BY, HAVING, window functions, or ranking. Include the columns a "
+    "reader needs to understand the situation. End with LIMIT 50. Return "
+    "only the SQL in a ```sql block. If nothing in the schema could match, "
+    "return exactly: SELECT NULL AS nothing WHERE 0"
+)
 
 
 @dataclass
@@ -19,6 +37,7 @@ class PipelineOutcome:
     caveated: bool
     semantic_retries: int
     stage1_attempts: int
+    fallback_note: str | None = None
 
 
 def _noop(_message: str) -> None:
@@ -31,6 +50,35 @@ def _format_correction(verdict: Stage2Verdict) -> str:
     if verdict.suggested_fix:
         lines.append(f"Suggested fix: {verdict.suggested_fix}")
     return "\n".join(f"- {line}" for line in lines)
+
+
+def _fallback_rows(client, question, failed_sql, schema_text, conn):
+    """When a ranking query comes back empty, ask for the raw matching rows.
+
+    Returns (sql, QueryResult) or None if the query could not be run.
+    """
+    content = "\n".join(
+        [
+            f"Question: {question}",
+            "",
+            "This query answered it but returned no rows:",
+            failed_sql,
+            "",
+            "Schema:",
+            schema_text,
+        ]
+    )
+    response = client.messages.create(
+        model=STAGE1_RETRY_MODEL,
+        max_tokens=1500,
+        system=_FALLBACK_SYSTEM,
+        messages=[{"role": "user", "content": content}],
+    )
+    sql = extract_sql(_reply_text(response))
+    try:
+        return sql, run_query(conn, sql)
+    except QueryError:
+        return None
 
 
 def answer_question(
@@ -68,12 +116,31 @@ def answer_question(
             client, question, s1.sql, schema_text, sample
         )
 
+    final_sql = s1.sql
+    final_result = s1.result
+    fallback_note = None
+
+    # A ranking query that Stage 2 rejected *and* came back empty has almost
+    # certainly over-filtered. Show the raw matching rows instead of nothing.
+    if final_result.row_count == 0 and not verdict.valid:
+        on_progress("Looking for the underlying data")
+        fb = _fallback_rows(client, question, s1.sql, schema_text, conn)
+        if fb is not None and fb[1].row_count > 0:
+            final_sql, final_result = fb
+            fallback_note = (
+                "Couldn't produce a single answer to this — showing the "
+                f"{final_result.row_count} record(s) that match the situation."
+            )
+        else:
+            fallback_note = _NO_MATCH_NOTE
+
     return PipelineOutcome(
         question=question,
-        sql=s1.sql,
-        result=s1.result,
+        sql=final_sql,
+        result=final_result,
         verdict=verdict,
         caveated=not verdict.valid,
         semantic_retries=retries,
         stage1_attempts=s1.attempts,
+        fallback_note=fallback_note,
     )

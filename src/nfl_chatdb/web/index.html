@@ -220,6 +220,11 @@
     border-color: rgba(255, 90, 78, .45);
     color: #ffb3ac;
   }
+  .banner.info {
+    background: rgba(255, 255, 255, .04);
+    border-color: var(--line);
+    color: var(--fg);
+  }
   .banner strong {
     font-family: var(--display);
     font-weight: 400;
@@ -500,6 +505,18 @@
       b.appendChild(el("strong", null, "Error "));
       b.appendChild(document.createTextNode(resp.error));
       answerEl.appendChild(b);
+      return;
+    }
+
+    // A fallback note means the ranking couldn't be computed; it replaces
+    // the caveat banner and the bare "No rows matched" state.
+    if (resp.fallback_note) {
+      var info = el("div", "banner info");
+      info.appendChild(el("strong", null, "Note "));
+      info.appendChild(document.createTextNode(resp.fallback_note));
+      answerEl.appendChild(info);
+      if (resp.row_count) answerEl.appendChild(renderTable(resp));
+      answerEl.appendChild(renderPipeline(resp));
       return;
     }
 

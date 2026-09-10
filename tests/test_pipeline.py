@@ -46,6 +46,9 @@ class ScriptedClient:
 
 SQL_OK = "```sql\nSELECT SUM(rush_touchdown) AS tds FROM play_by_play WHERE season = 2023\n```"
 SQL_ALL_TD = "```sql\nSELECT COUNT(*) AS tds FROM play_by_play WHERE season = 2023\n```"
+SQL_EMPTY = "```sql\nSELECT rusher_player_name FROM play_by_play WHERE season = 1999 GROUP BY rusher_player_name HAVING COUNT(*) > 5\n```"
+SQL_RAW_ROWS = "```sql\nSELECT rusher_player_name, rush_touchdown FROM play_by_play WHERE season = 2023 LIMIT 50\n```"
+SQL_STILL_EMPTY = "```sql\nSELECT rusher_player_name FROM play_by_play WHERE season = 1999\n```"
 
 
 def test_valid_first_pass(tiny_db, fake_schema_text):
@@ -168,6 +171,68 @@ def test_answer_question_reports_progress(tiny_db, fake_schema_text):
     assert seen[0] == "Writing SQL"
     assert any("Refining" in m for m in seen)
     assert seen[-1] == "Re-checking the answer"
+
+
+# generate_sql retries an empty result once internally, so a persistently
+# empty query costs two `create` calls before answer_question sees it.
+def test_empty_caveated_result_falls_back_to_raw_rows(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_EMPTY, SQL_STILL_EMPTY, SQL_RAW_ROWS],
+        verdicts=[
+            Stage2Verdict(valid=False, issues=["Returns 0 rows; over-filtered."]),
+        ],
+    )
+    out = answer_question(
+        client, "which back had the best 1999 season?",
+        conn=conn, schema_text=fake_schema_text, max_semantic_retries=0,
+    )
+    assert out.result.row_count > 0
+    assert out.fallback_note and "match" in out.fallback_note.lower()
+    assert out.sql == (
+        "SELECT rusher_player_name, rush_touchdown "
+        "FROM play_by_play WHERE season = 2023 LIMIT 50"
+    )
+
+
+def test_fallback_note_when_nothing_matches(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_EMPTY, SQL_STILL_EMPTY, SQL_STILL_EMPTY],
+        verdicts=[Stage2Verdict(valid=False, issues=["0 rows."])],
+    )
+    out = answer_question(
+        client, "q", conn=conn, schema_text=fake_schema_text,
+        max_semantic_retries=0,
+    )
+    assert out.result.row_count == 0
+    assert out.fallback_note == "No records in the database match this situation."
+
+
+def test_no_fallback_when_result_is_non_empty(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_OK], verdicts=[Stage2Verdict(valid=True)],
+    )
+    out = answer_question(
+        client, "rushing TDs", conn=conn, schema_text=fake_schema_text,
+    )
+    assert out.fallback_note is None
+
+
+def test_no_fallback_when_empty_but_stage2_accepts(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_STILL_EMPTY, SQL_STILL_EMPTY],
+        verdicts=[Stage2Verdict(valid=True)],
+    )
+    out = answer_question(
+        client, "any 1999 rushers?", conn=conn, schema_text=fake_schema_text,
+    )
+    assert out.result.row_count == 0
+    assert out.fallback_note is None
+    # the two internal Stage 1 attempts, and no fallback query beyond them
+    assert len(client.create_calls) == 2
 
 
 def test_stage1_error_propagates(tiny_db, fake_schema_text):

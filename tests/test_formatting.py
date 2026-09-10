@@ -33,6 +33,7 @@ def test_outcome_to_dict_shape():
         "issues": [],
         "semantic_retries": 0,
         "stage1_attempts": 1,
+        "fallback_note": None,
     }
 
 
