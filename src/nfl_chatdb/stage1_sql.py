@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from nfl_chatdb.database import QueryError, QueryResult, run_query
+from nfl_chatdb.prompts import cached_schema_system
 
 STAGE1_MODEL = "claude-haiku-4-5"
 # The semantic retry is the hard case by definition — the first attempt
@@ -14,7 +15,7 @@ STAGE1_RETRY_MODEL = "claude-sonnet-5"
 
 SYSTEM_PROMPT = (
     "You translate questions about NFL statistics into a single SQLite "
-    "SELECT query. Use only the tables and columns in the provided schema. "
+    "SELECT query. Use only the tables and columns in the schema above. "
     "When a column lists its allowed values (`-- values: ...`), filter "
     "using those exact literals; do not invent your own. "
     "Pick the coarsest table that already holds what the question needs: "
@@ -64,17 +65,11 @@ def extract_sql(text: str) -> str:
 
 def _first_user_content(
     question: str,
-    schema_text: str,
     correction: str | None,
     previous_sql: str | None,
     previous_sample: str | None,
 ) -> str:
-    parts = [
-        f"Question: {question}",
-        "",
-        "Schema:",
-        schema_text,
-    ]
+    parts = [f"Question: {question}"]
     if previous_sql:
         parts += [
             "",
@@ -114,16 +109,20 @@ def generate_sql(
         {
             "role": "user",
             "content": _first_user_content(
-                question, schema_text, correction, previous_sql, previous_sample
+                question, correction, previous_sql, previous_sample
             ),
         }
+    ]
+    system = [
+        cached_schema_system(schema_text),
+        {"type": "text", "text": SYSTEM_PROMPT},
     ]
 
     for attempt in range(1, max_attempts + 1):
         response = client.messages.create(
             model=model,
             max_tokens=2048,
-            system=SYSTEM_PROMPT,
+            system=system,
             messages=messages,
         )
         reply = _reply_text(response)

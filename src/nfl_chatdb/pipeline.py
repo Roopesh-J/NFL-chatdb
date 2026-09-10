@@ -1,4 +1,5 @@
-"""End-to-end orchestration of Stage 1 and Stage 2 with one semantic retry."""
+"""End-to-end orchestration: Stage 1 writes SQL, Stage 2 verifies it (with
+one semantic retry), Stage 3 phrases the settled result."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ from dataclasses import dataclass
 
 from nfl_chatdb.database import QueryError, QueryResult, run_query
 from nfl_chatdb.formatting import format_result_sample
+from nfl_chatdb.prompts import cached_schema_system
 from nfl_chatdb.stage1_sql import (
     STAGE1_RETRY_MODEL,
     _reply_text,
@@ -13,12 +15,14 @@ from nfl_chatdb.stage1_sql import (
     generate_sql,
 )
 from nfl_chatdb.stage2_validate import Stage2Verdict, validate_semantics
+from nfl_chatdb.stage3_answer import AnswerSummary, synthesize_answer
 
 _NO_MATCH_NOTE = "No records in the database match this situation."
 
 _FALLBACK_SYSTEM = (
     "A query answered a question but returned no rows, most likely because "
-    "it over-filtered (a HAVING threshold, a rare situation). Write one "
+    "it over-filtered (a HAVING threshold, a rare situation). Using the "
+    "schema above, write one "
     "SQLite SELECT that lists the raw rows relevant to the question - the "
     "records matching the situation it describes - with NO aggregation, "
     "GROUP BY, HAVING, window functions, or ranking. Include the columns a "
@@ -37,6 +41,8 @@ class PipelineOutcome:
     caveated: bool
     semantic_retries: int
     stage1_attempts: int
+    answer: str = ""
+    reliable: bool = True
     fallback_note: str | None = None
 
 
@@ -63,15 +69,15 @@ def _fallback_rows(client, question, failed_sql, schema_text, conn):
             "",
             "This query answered it but returned no rows:",
             failed_sql,
-            "",
-            "Schema:",
-            schema_text,
         ]
     )
     response = client.messages.create(
         model=STAGE1_RETRY_MODEL,
         max_tokens=1500,
-        system=_FALLBACK_SYSTEM,
+        system=[
+            cached_schema_system(schema_text),
+            {"type": "text", "text": _FALLBACK_SYSTEM},
+        ],
         messages=[{"role": "user", "content": content}],
     )
     sql = extract_sql(_reply_text(response))
@@ -104,6 +110,8 @@ def answer_question(
     ):
         retries += 1
         on_progress(f"Refining (pass {retries + 1})")
+        # One retry only, and Stage 3 is the terminal read — no second
+        # Stage 2 here (a re-check verdict couldn't drive anything anyway).
         s1 = generate_sql(
             client,
             question,
@@ -115,10 +123,6 @@ def answer_question(
             model=STAGE1_RETRY_MODEL,
         )
         sample = format_result_sample(s1.result)
-        on_progress("Re-checking the answer")
-        verdict = validate_semantics(
-            client, question, s1.sql, schema_text, sample
-        )
 
     final_sql = s1.sql
     final_result = s1.result
@@ -138,13 +142,27 @@ def answer_question(
         else:
             fallback_note = _NO_MATCH_NOTE
 
+    if fallback_note is not None:
+        summary = AnswerSummary(answer="", reliable=False)
+    else:
+        on_progress("Writing the answer")
+        summary = synthesize_answer(
+            client,
+            question,
+            final_sql,
+            format_result_sample(final_result),
+            verdict,
+        )
+
     return PipelineOutcome(
         question=question,
         sql=final_sql,
         result=final_result,
         verdict=verdict,
-        caveated=not verdict.valid,
+        caveated=not summary.reliable,
         semantic_retries=retries,
         stage1_attempts=s1.attempts,
+        answer=summary.answer,
+        reliable=summary.reliable,
         fallback_note=fallback_note,
     )

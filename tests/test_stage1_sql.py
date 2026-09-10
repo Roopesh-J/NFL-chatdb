@@ -84,7 +84,12 @@ def test_generate_sql_succeeds_first_try(tiny_db, fake_schema_text):
     assert out.attempts == 1
     assert out.degenerate is False
     assert out.result.rows == [(2,)]
-    assert client.messages.calls[0]["model"] == STAGE1_MODEL
+    call = client.messages.calls[0]
+    assert call["model"] == STAGE1_MODEL
+    # schema rides a cached system block, not the (volatile) user message
+    assert call["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert "seasonal_stats" in call["system"][0]["text"]
+    assert "seasonal_stats" not in str(call["messages"])
 
 
 def test_generate_sql_retries_on_execution_error(tiny_db, fake_schema_text):

@@ -4,6 +4,7 @@ import pytest
 from nfl_chatdb.database import connect
 from nfl_chatdb.pipeline import PipelineOutcome, answer_question
 from nfl_chatdb.stage2_validate import Stage2Verdict
+from nfl_chatdb.stage3_answer import AnswerSummary
 
 
 class _Block:
@@ -39,6 +40,17 @@ class ScriptedClient:
 
             def parse(self, **kwargs):
                 client.parse_calls.append(kwargs)
+                fmt = kwargs.get("output_format")
+                # Stage 3's call: only consume a scripted AnswerSummary if the
+                # test provided one; otherwise return a benign default so
+                # tests that don't care about phrasing don't have to script it.
+                if fmt is AnswerSummary and not (
+                    client._verdicts
+                    and isinstance(client._verdicts[0], AnswerSummary)
+                ):
+                    return _ParseResponse(
+                        AnswerSummary(answer="Answer text.", reliable=True)
+                    )
                 return _ParseResponse(client._verdicts.pop(0))
 
         self.messages = _M()
@@ -147,6 +159,7 @@ def test_no_retry_when_stage2_says_not_worthwhile(tiny_db, fake_schema_text):
                 issues=["'best' is undefined; any choice is defensible."],
                 retry_worthwhile=False,
             ),
+            AnswerSummary(answer="'best' is subjective here.", reliable=False),
         ],
     )
     out = answer_question(
@@ -160,19 +173,55 @@ def test_no_retry_when_stage2_says_not_worthwhile(tiny_db, fake_schema_text):
 
 def test_still_invalid_after_retry_is_caveated(tiny_db, fake_schema_text):
     conn = connect(tiny_db)
-    bad_verdict = Stage2Verdict(
-        valid=False, issues=["Still wrong."], suggested_fix="Try harder."
-    )
     client = ScriptedClient(
         create_replies=[SQL_ALL_TD, SQL_ALL_TD],
-        verdicts=[bad_verdict, bad_verdict],
+        verdicts=[
+            Stage2Verdict(
+                valid=False, issues=["Still wrong."], suggested_fix="Try harder."
+            ),
+            AnswerSummary(answer="This still looks off.", reliable=False),
+        ],
     )
     out = answer_question(
         client, "rushing TDs", conn=conn, schema_text=fake_schema_text,
     )
     assert out.semantic_retries == 1
     assert out.caveated is True
-    assert out.verdict.valid is False
+    assert out.reliable is False
+
+
+def test_stage3_answer_and_reliable_reach_the_outcome(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_OK],
+        verdicts=[
+            Stage2Verdict(valid=True),
+            AnswerSummary(answer="Two rushing TDs in 2023.", reliable=True),
+        ],
+    )
+    out = answer_question(
+        client, "rushing TDs in 2023", conn=conn, schema_text=fake_schema_text,
+    )
+    assert out.answer == "Two rushing TDs in 2023."
+    assert out.reliable is True
+    assert out.caveated is False
+
+
+def test_no_second_stage2_after_a_retry(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_ALL_TD, SQL_OK],
+        verdicts=[
+            Stage2Verdict(valid=False, issues=["wrong"], suggested_fix="fix"),
+            AnswerSummary(answer="ok", reliable=True),
+        ],
+    )
+    answer_question(
+        client, "rushing TDs", conn=conn, schema_text=fake_schema_text,
+    )
+    # one Stage 2 verify + one Stage 3 synthesize — the retry does not re-verify
+    parse_models = [c["model"] for c in client.parse_calls]
+    assert parse_models == ["claude-sonnet-5", "claude-haiku-4-5"]
 
 
 def test_answer_question_reports_progress(tiny_db, fake_schema_text):
@@ -181,7 +230,6 @@ def test_answer_question_reports_progress(tiny_db, fake_schema_text):
         create_replies=[SQL_ALL_TD, SQL_OK],
         verdicts=[
             Stage2Verdict(valid=False, issues=["wrong"], suggested_fix="fix it"),
-            Stage2Verdict(valid=True),
         ],
     )
     seen = []
@@ -191,7 +239,7 @@ def test_answer_question_reports_progress(tiny_db, fake_schema_text):
     )
     assert seen[0] == "Writing SQL"
     assert any("Refining" in m for m in seen)
-    assert seen[-1] == "Re-checking the answer"
+    assert seen[-1] == "Writing the answer"
 
 
 # generate_sql retries an empty result once internally, so a persistently

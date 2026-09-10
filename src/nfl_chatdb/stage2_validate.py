@@ -8,11 +8,14 @@ from __future__ import annotations
 import pydantic
 from pydantic import BaseModel, Field
 
+from nfl_chatdb.prompts import cached_schema_system
+
 STAGE2_MODEL = "claude-sonnet-5"
 
 SYSTEM_PROMPT = (
     "You review a SQLite query written to answer a question about NFL "
-    "statistics. Decide whether the query truly answers the question that "
+    "statistics, using the schema above. Decide whether the query truly "
+    "answers the question that "
     "was asked - not merely whether it runs. Consider: does it measure the "
     "right thing, filter to the right scope (season, team, player, play "
     "type), aggregate at the right grain, and is the result sample "
@@ -34,9 +37,7 @@ class Stage2Verdict(BaseModel):
     retry_worthwhile: bool = True
 
 
-def _user_content(
-    question: str, sql: str, schema_text: str, result_sample: str
-) -> str:
+def _user_content(question: str, sql: str, result_sample: str) -> str:
     return "\n".join(
         [
             f"Question: {question}",
@@ -46,9 +47,6 @@ def _user_content(
             "",
             "Result sample:",
             result_sample,
-            "",
-            "Schema:",
-            schema_text,
         ]
     )
 
@@ -67,13 +65,14 @@ def validate_semantics(
             # on extended thinking before emitting the JSON verdict, and a
             # tighter cap truncates the verdict into invalid JSON.
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=[
+                cached_schema_system(schema_text),
+                {"type": "text", "text": SYSTEM_PROMPT},
+            ],
             messages=[
                 {
                     "role": "user",
-                    "content": _user_content(
-                        question, sql, schema_text, result_sample
-                    ),
+                    "content": _user_content(question, sql, result_sample),
                 }
             ],
             output_format=Stage2Verdict,
