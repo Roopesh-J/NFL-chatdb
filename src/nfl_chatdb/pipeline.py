@@ -97,7 +97,11 @@ def answer_question(
     verdict = validate_semantics(client, question, s1.sql, schema_text, sample)
 
     retries = 0
-    while not verdict.valid and retries < max_semantic_retries:
+    while (
+        not verdict.valid
+        and verdict.retry_worthwhile
+        and retries < max_semantic_retries
+    ):
         retries += 1
         on_progress(f"Refining (pass {retries + 1})")
         s1 = generate_sql(

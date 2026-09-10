@@ -19,7 +19,11 @@ SYSTEM_PROMPT = (
     "plausible (non-empty when a list is expected, no percentages over "
     "100, no negative counts)? If it is wrong or doubtful, set valid=false, "
     "list concrete issues, and give a specific suggested_fix instruction "
-    "that Stage 1 can act on."
+    "that Stage 1 can act on. "
+    "Set retry_worthwhile=false when the problem is inherent in the "
+    "question - it is underspecified or ambiguous and any reasonable SQL "
+    "choice is defensible, so re-running Stage 1 would not help. Set it "
+    "true when a corrected query could plausibly do better."
 )
 
 
@@ -27,6 +31,7 @@ class Stage2Verdict(BaseModel):
     valid: bool
     issues: list[str] = Field(default_factory=list)
     suggested_fix: str | None = None
+    retry_worthwhile: bool = True
 
 
 def _user_content(

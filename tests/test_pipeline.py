@@ -137,6 +137,27 @@ def test_retry_uses_the_stronger_model(tiny_db, fake_schema_text):
     assert client.create_calls[1]["model"] == STAGE1_RETRY_MODEL
 
 
+def test_no_retry_when_stage2_says_not_worthwhile(tiny_db, fake_schema_text):
+    conn = connect(tiny_db)
+    client = ScriptedClient(
+        create_replies=[SQL_OK],
+        verdicts=[
+            Stage2Verdict(
+                valid=False,
+                issues=["'best' is undefined; any choice is defensible."],
+                retry_worthwhile=False,
+            ),
+        ],
+    )
+    out = answer_question(
+        client, "who is the best QB?", conn=conn, schema_text=fake_schema_text,
+    )
+    assert out.semantic_retries == 0
+    assert out.caveated is True
+    # only the one Stage 1 call — no retry round
+    assert len(client.create_calls) == 1
+
+
 def test_still_invalid_after_retry_is_caveated(tiny_db, fake_schema_text):
     conn = connect(tiny_db)
     bad_verdict = Stage2Verdict(
