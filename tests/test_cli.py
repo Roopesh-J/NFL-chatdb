@@ -21,20 +21,25 @@ def _outcome(caveated=False):
         caveated=caveated,
         semantic_retries=1 if caveated else 0,
         stage1_attempts=1,
+        answer="One.",
+        reliable=not caveated,
     )
 
 
-def test_render_outcome_plain():
+def test_render_outcome_shows_answer_and_two_stage_story():
     text = cli.render_outcome(_outcome())
+    assert text.startswith("One.")
     assert "SELECT 1 AS n" in text
-    assert "n" in text
-    assert "Caveat" not in text
+    assert "Stage 1: wrote SQL" in text
+    assert "Stage 2: valid" in text
+    assert "Stage 3: reliable" in text
 
 
-def test_render_outcome_caveated():
+def test_render_outcome_caveated_shows_the_flag_and_issues():
     text = cli.render_outcome(_outcome(caveated=True))
-    assert "Caveat" in text
-    assert "Only counts rushing TDs." in text
+    assert "then 1 semantic retry" in text
+    assert "Stage 2: flagged — Only counts rushing TDs." in text
+    assert "Stage 3: not reliable" in text
 
 
 def test_main_happy_path(monkeypatch, tiny_db, capsys):
@@ -79,13 +84,28 @@ def test_main_missing_db_returns_2(monkeypatch, tmp_path, capsys):
     assert "ingest" in capsys.readouterr().out.lower()
 
 
-def test_main_api_error_returns_2(monkeypatch, tiny_db, capsys):
+def test_main_missing_key_returns_2_with_guidance(monkeypatch, tiny_db, capsys):
     monkeypatch.setattr(cli, "load_schema_text", lambda: "schema")
 
-    def _boom():
-        raise anthropic.APIError("bad key", request=None, body=None)
+    def _no_key():
+        raise anthropic.AnthropicError("could not resolve authentication")
 
-    monkeypatch.setattr(cli, "build_client", _boom)
+    monkeypatch.setattr(cli, "build_client", _no_key)
     rc = cli.main(["q", "--db", str(tiny_db)])
     assert rc == 2
-    assert "api" in capsys.readouterr().out.lower()
+    out = capsys.readouterr().out
+    assert "ANTHROPIC_API_KEY" in out
+    assert "Traceback" not in out
+
+
+def test_main_api_error_during_answer_returns_2(monkeypatch, tiny_db, capsys):
+    monkeypatch.setattr(cli, "load_schema_text", lambda: "schema")
+    monkeypatch.setattr(cli, "build_client", lambda: object())
+
+    def _boom(*a, **k):
+        raise anthropic.APIError("rate limited", request=None, body=None)
+
+    monkeypatch.setattr(cli, "answer_question", _boom)
+    rc = cli.main(["q", "--db", str(tiny_db)])
+    assert rc == 2
+    assert "api call failed" in capsys.readouterr().out.lower()

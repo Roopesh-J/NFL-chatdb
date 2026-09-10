@@ -23,15 +23,30 @@ def build_client():
 
 
 def render_outcome(outcome: PipelineOutcome) -> str:
-    lines = [
-        "SQL:",
-        f"  {outcome.sql}",
+    lines: list[str] = []
+    if outcome.answer:
+        lines += [outcome.answer, ""]
+    lines += ["SQL:", f"  {outcome.sql}", "", format_result_sample(outcome.result)]
+    if outcome.fallback_note:
+        lines += ["", outcome.fallback_note]
+
+    retry = (
+        f", then {outcome.semantic_retries} semantic retry"
+        if outcome.semantic_retries
+        else ""
+    )
+    lines += [
         "",
-        format_result_sample(outcome.result),
+        "— how this was answered —",
+        f"Stage 1: wrote SQL{retry}",
+        "Stage 2: "
+        + (
+            "valid"
+            if outcome.verdict.valid
+            else "flagged — " + "; ".join(outcome.verdict.issues)
+        ),
+        f"Stage 3: {'reliable' if outcome.reliable else 'not reliable'}",
     ]
-    if outcome.caveated:
-        lines += ["", "⚠ Caveat: this answer may not fully match the question."]
-        lines += [f"  - {issue}" for issue in outcome.verdict.issues]
     return "\n".join(lines)
 
 
@@ -54,8 +69,17 @@ def main(argv=None) -> int:
         return 2
 
     try:
+        client = build_client()
+    except anthropic.AnthropicError as err:
+        print(
+            f"Could not create the Anthropic client: {err}\n"
+            "Set ANTHROPIC_API_KEY (for example in a .env file)."
+        )
+        return 2
+
+    try:
         outcome = answer_question(
-            build_client(), args.question, conn=conn, schema_text=schema_text
+            client, args.question, conn=conn, schema_text=schema_text
         )
     except Stage1Error as err:
         print(f"Could not produce a working query: {err.last_error}")
