@@ -25,30 +25,46 @@ built-in intuition for (see Future Ideas).
 
 ## Data Layer
 
-Three nflverse datasets, ingested via `nfl_data_py` into a local SQLite
-file:
+Six nflverse datasets, ingested via `nfl_data_py` into a local SQLite
+file, spanning four grains so Stage 1 can pick the coarsest table that
+answers the question:
 
 - **`play_by_play`** — per-play event log, most granular table,
   self-contained (player names, teams, down/distance, EPA, air yards,
   TD flags all inline as columns — no joins needed to make sense of a
-  row).
+  row). ~200k rows × ~400 columns; a full scan is ~6s, so it is the
+  slow path and the other tables are preferred when they suffice.
 - **`seasonal_stats`** — pre-aggregated per-player, per-season totals.
-  Included because full-season aggregation over thousands of raw
-  play-by-play rows is the expensive case; a single week's worth of
-  plays (~60-70 rows) is cheap enough to aggregate directly from
-  `play_by_play`, so a separate `weekly_stats` table would be mostly
-  redundant and was cut.
+- **`weekly`** — per-player, per-game stats (`import_weekly_data`).
+  Added 2026-09-09: originally cut on the theory that a single week is
+  cheap to aggregate from `play_by_play`, but questions that aggregate
+  *across* games ("best QB record in one-score games") then have to
+  reconstruct per-game outcomes from ~200k play rows — the 75s case
+  that motivated adding it. ~28k rows.
+- **`schedules`** — one row per game (`import_schedules`): final
+  scores, `result` (home margin), spreads, moneylines, over/under,
+  weather, roof/surface, coaches, starting QBs. Added 2026-09-09. The
+  canonical source for game outcomes; ~1.1k rows.
+- **`rosters`** — per-player, per-season bio (`import_seasonal_rosters`,
+  already pulled for the `seasonal_stats` name merge, now also stored):
+  position, height, weight, college, age, `years_exp`, `entry_year` /
+  `rookie_year`, draft club/number. Added 2026-09-09 — without it the
+  pipeline could answer no "who" attribute question. Third-party id
+  crosswalk columns and `headshot_url` are dropped at ingest
+  (`_DROP_COLUMNS`) to keep the schema snapshot lean.
 - **`snap_counts`** — per-player, per-game snap participation
   (offense/defense/special-teams counts and percentages), sourced from
-  PFR. This is genuinely independent data, not derivable from the
-  other two tables — pbp only captures plays a player was directly
-  involved in, not every snap they were on the field for.
+  PFR. Genuinely independent data — pbp only captures plays a player
+  was directly involved in, not every snap on the field.
+
+**Join keys:** nflverse `game_id` (`2023_01_KC_DET` form) and GSIS
+`player_id` (`00-0035700` form) are consistent across `play_by_play`,
+`weekly`, `seasonal_stats`, `schedules`, and `rosters`.
 
 **Known wrinkle (not blocking MVP):** `snap_counts` uses PFR's own
 `pfr_game_id` / `pfr_player_id` scheme, which doesn't cleanly join
-against `play_by_play`'s `game_id` / player-name columns. Any future
-cross-table question (e.g., "yards per snap") will need an ID-mapping
-step at ingestion time.
+against the nflverse keys. Any cross-table question involving snaps
+(e.g., "yards per snap") needs an ID-mapping step at ingestion time.
 
 Explicitly excluded: schedules, rosters, officials, trades, draft
 picks, combine results, depth charts, injury reports, ESPN QBR,

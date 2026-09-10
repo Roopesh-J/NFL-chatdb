@@ -19,7 +19,26 @@ def test_seasons_are_last_four_completed():
 
 
 def test_tables_constant():
-    assert TABLES == ("play_by_play", "seasonal_stats", "snap_counts")
+    assert TABLES == (
+        "play_by_play",
+        "seasonal_stats",
+        "weekly",
+        "schedules",
+        "rosters",
+        "snap_counts",
+    )
+
+
+def test_render_schema_snapshot_skips_absent_tables(tmp_path):
+    conn = sqlite3.connect(tmp_path / "t.db")
+    try:
+        conn.execute("CREATE TABLE schedules (game_id TEXT, result INTEGER)")
+        snapshot = render_schema_snapshot(conn)
+    finally:
+        conn.close()
+    assert "Table: schedules" in snapshot
+    # the other five tables in TABLES are not in this db
+    assert "Table: play_by_play" not in snapshot
 
 
 def test_write_dataframe_replaces_and_counts(tmp_path):
@@ -179,8 +198,24 @@ def test_ingest_end_to_end(tmp_path):
     assert counts["play_by_play"] > 40000  # ~48k plays in a season
     assert counts["seasonal_stats"] > 500
     assert counts["snap_counts"] > 5000
+    assert counts["weekly"] > 4000  # ~5.6k player-games in a season
+    assert 250 < counts["schedules"] < 350  # 272 regular + playoffs
+    assert counts["rosters"] > 2500
 
     conn = connect(db_path)
+    # dropped columns really are gone from the stored table
+    roster_cols = [
+        r[1] for r in conn.execute("PRAGMA table_info(rosters)")
+    ]
+    assert "headshot_url" not in roster_cols
+    assert "player_id" in roster_cols
+    # schedules carries game outcomes at game grain
+    close = run_query(
+        conn,
+        "SELECT COUNT(*) FROM schedules WHERE ABS(result) <= 7",
+    )
+    assert close.rows[0][0] > 50
+
     # ingest-time enrichment: seasonal_stats gains a display-name column,
     # and the large majority of rows resolve to a name.
     named = run_query(

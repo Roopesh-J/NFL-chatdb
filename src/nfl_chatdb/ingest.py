@@ -13,11 +13,33 @@ from pathlib import Path
 from nfl_chatdb.database import DEFAULT_DB_PATH
 
 SEASONS = [2021, 2022, 2023, 2024]
-TABLES = ("play_by_play", "seasonal_stats", "snap_counts")
+TABLES = (
+    "play_by_play",
+    "seasonal_stats",
+    "weekly",
+    "schedules",
+    "rosters",
+    "snap_counts",
+)
 SCHEMA_SNAPSHOT_PATH = Path(__file__).parent / "schema_snapshot.txt"
+
+# Columns dropped before writing — dead weight that would only bloat the
+# schema snapshot Stage 1 reads (image URLs, third-party player-id
+# crosswalks the pipeline never joins on).
+_DROP_COLUMNS: dict[str, tuple[str, ...]] = {
+    "weekly": ("headshot_url",),
+    "rosters": (
+        "headshot_url", "espn_id", "sportradar_id", "yahoo_id", "rotowire_id",
+        "pff_id", "pfr_id", "fantasy_data_id", "sleeper_id", "esb_id",
+        "gsis_it_id", "smart_id",
+    ),
+}
 
 
 def write_dataframe(df, table: str, conn: sqlite3.Connection) -> int:
+    drop = [c for c in _DROP_COLUMNS.get(table, ()) if c in df.columns]
+    if drop:
+        df = df.drop(columns=drop)
     df.to_sql(table, conn, if_exists="replace", index=False)
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
@@ -82,6 +104,8 @@ def render_schema_snapshot(conn: sqlite3.Connection) -> str:
     blocks: list[str] = []
     for table in TABLES:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if not rows:
+            continue  # table not in this database (e.g. a test fixture)
         # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
         text_columns = [
             name for _cid, name, col_type, *_ in rows
@@ -129,6 +153,9 @@ def _load_datasets(seasons: list[int]):
     return {
         "play_by_play": nfl.import_pbp_data(seasons, downcast=True, cache=False),
         "seasonal_stats": seasonal,
+        "weekly": nfl.import_weekly_data(seasons),
+        "schedules": nfl.import_schedules(seasons),
+        "rosters": rosters,
         "snap_counts": nfl.import_snap_counts(seasons),
     }
 
