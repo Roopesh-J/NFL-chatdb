@@ -31,7 +31,12 @@ SYSTEM_PROMPT = (
     "The database covers NFL seasons 2021 through 2024."
 )
 
-_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*(.*?)\s*```", re.DOTALL)
+# A language tag (```sql) is only consumed when it's on its own line —
+# otherwise ` ```SELECT * FROM t``` ` (fence and SQL on one line) would
+# have `SELECT` eaten as if it were the tag.
+_FENCE_RE = re.compile(
+    r"```(?:[a-zA-Z][a-zA-Z0-9_+-]*[ \t]*\n)?\s*(.*?)\s*```", re.DOTALL
+)
 
 
 @dataclass

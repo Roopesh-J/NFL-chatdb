@@ -56,6 +56,18 @@ def test_extract_sql_language_tagged_fences():
     assert extract_sql("```postgresql\nSELECT 1\n```") == "SELECT 1"
 
 
+def test_extract_sql_fence_and_query_on_one_line():
+    # no newline after the opening fence — `SELECT` must not be eaten as a tag
+    assert extract_sql("```SELECT n FROM t WHERE x = 1```") == "SELECT n FROM t WHERE x = 1"
+    assert extract_sql("```WITH a AS (SELECT 1) SELECT * FROM a```") == (
+        "WITH a AS (SELECT 1) SELECT * FROM a"
+    )
+
+
+def test_extract_sql_empty_tag_line():
+    assert extract_sql("```\nSELECT 1\n```") == "SELECT 1"
+
+
 def test_extract_sql_empty_raises():
     with pytest.raises(Stage1Error):
         extract_sql("   ")
