@@ -20,8 +20,8 @@ actually mean what was asked"*, without a hand-written semantic layer.
 Why NFL: the vocabulary — *quarter, completion, red zone, EPA, air yards* —
 is already in an LLM's general knowledge, so it substitutes for the
 semantic layer a business schema would need. That's a deliberate, fixed
-constraint (see `docs/superpowers/specs/2026-09-01-nfl-chat-db-design.md`),
-not a placeholder for a future glossary.
+constraint (see `docs/design.md`), not a placeholder for a future
+glossary.
 
 ## Data
 

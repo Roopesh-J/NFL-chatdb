@@ -8,6 +8,7 @@ __pycache__/
 # Worktrees / SDD scratch
 .worktrees/
 .superpowers/
+.claude/worktrees/
 
 # uv
 # (uv.lock IS committed — do not ignore it)
